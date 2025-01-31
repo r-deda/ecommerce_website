@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Order Confirmation</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.min.css') }}">
+</head>
+<body>
+
+<div class="container mt-5">
+    <h2 class="text-center mb-4">Order Confirmation</h2>
+
+    <p class="text-center">Your order has now been placed. Thanks for shopping with SecureCart!</p>
+
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5 class="card-title">Order Summary</h5>
+            <ul class="list-group mb-4">
+                {% for item in cart_items %}
+                <li class="list-group-item">
+                    {{ item.product.name }} (x{{ item.quantity }})
+                </li>
+                {% endfor %}
+                <li class="list-group-item font-weight-bold">
+                    Total Price: £{{ "%.2f" | format(total_price) }}
+                </li>
+            </ul>
+        </div>
+    </div>
+    <a href="{{ url_for('logout') }}" class="btn btn-primary">Log Out</a>
+</div>
+
+<script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js') }}"></script>
+</body>
+</html>

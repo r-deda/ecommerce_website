@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Your Cart</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.min.css') }}">
+</head>
+<body>
+
+<div class="container mt-5">
+    <h2 class="text-center mb-4">Your Shopping Cart</h2>
+    {% if cart_items %}
+        <div class="row">
+            {% for item in cart_items %}
+            <div class="col-12 mb-4">
+                <div class="card">
+                    <div class="row g-0">
+                        <!-- Product Image -->
+                        <div class="col-md-3">
+                            <img src="{{ url_for('static', filename='images/' ~ item['product'].image_url) }}"
+                                 alt="{{ item['product'].name }}"
+                                 class="img-fluid rounded-start"
+                                 style="height: 150px; object-fit: cover;">
+                        </div>
+
+                        <!-- Product Details -->
+                        <div class="col-md-6">
+                            <div class="card-body">
+                                <h5 class="card-title">{{ item['product'].name }}</h5>
+                                <p class="card-text"><strong>Price:</strong> £{{ '%.2f' % item['product'].price }}</p>
+                                <p class="card-text"><strong>Subtotal:</strong> £{{ '%.2f' % item['subtotal'] }}</p>
+                            </div>
+                        </div>
+
+                        <!-- Quantity and Remove Button -->
+                        <div class="col-md-3">
+                            <div class="card-body text-center">
+                                <!-- Update Quantity -->
+                                <form method="POST" action="{{ url_for('add_to_cart', product_id=item['product'].id) }}" class="d-inline">
+                                    <div class="mb-2">
+                                        <input type="number" name="quantity" value="{{ item['quantity'] }}" min="1" class="form-control text-center">
+                                    </div>
+                                    <button type="submit" class="btn btn-secondary btn-sm">Update</button>
+                                </form>
+
+                                <!-- Remove Item -->
+                                <form method="POST" action="{{ url_for('remove_from_cart', product_id=item['product'].id) }}" class="mt-2">
+                                    <button type="submit" class="btn btn-danger">Remove</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="row mt-4">
+            <div class="col-lg-6">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Order Summary</h5>
+                        <p class="card-text"><strong>Total Items:</strong> {{ total_items }}</p>
+                        <p class="card-text"><strong>Total Price:</strong> £{{ '%.2f' % total_price }}</p>
+                        <form action="{{ url_for('payments') }}" method="GET">
+                            <button type="submit" class="btn btn-success">Proceed to Checkout</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-4">
+            <div class="col-lg-6 offset-lg-3">
+                <a href="{{ url_for('all_products') }}" class="btn btn-primary w-100">Continue Shopping</a>
+            </div>
+        </div>
+
+    {% else %}
+        <div class="text-center">
+            <p>Your cart is empty.</p>
+            <a href="{{ url_for('all_products') }}" class="btn btn-primary">Continue Shopping</a>
+        </div>
+    {% endif %}
+</div>
+
+<script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js') }}"></script>
+</body>
+</html>

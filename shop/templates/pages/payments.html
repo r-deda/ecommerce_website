@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Page</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.min.css') }}">
+    <script src="https://js.stripe.com/v3/"></script>
+</head>
+<body>
+
+<div class="container mt-5">
+    <h2 class="text-center mb-4">Complete Your Payment</h2>
+
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5 class="card-title">Order Summary</h5>
+            <ul class="list-group mb-4">
+                {% for item in cart_items %}
+                <li class="list-group-item">
+                    {{ item.product.name }} (x{{ item.quantity }})
+                </li>
+                {% endfor %}
+                <li class="list-group-item font-weight-bold">
+                    Total Price: £{{ "%.2f" | format(total_price) }}
+                </li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-body">
+            <form id="payment-form">
+                <div class="mb-3">
+                    <label for="card-element" class="form-label">Card Details</label>
+                    <div id="card-element">
+                        <!-- A Stripe Element will be inserted here. -->
+                    </div>
+                    <div id="card-errors" role="alert" class="text-danger mt-2"></div>
+                </div>
+                <button id="submit" class="btn btn-success mt-3 w-25">
+                    <span id="button-text">Pay Now</span>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div class="d-flex flex-column">
+        <a href="{{ url_for('view_cart') }}" class="btn btn-primary mb-2">Back to Cart</a>
+        <a href="{{ url_for('all_products') }}" class="btn btn-primary">Continue Shopping</a>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/bootstrap.min.js') }}"></script>
+<script>
+    var stripe = Stripe('{{ config["STRIPE_PUBLIC_KEY"] }}');
+    var elements = stripe.elements();
+    var card = elements.create('card');
+    card.mount('#card-element');
+
+    var form = document.getElementById('payment-form');
+    form.addEventListener('submit', function(event) {
+        event.preventDefault();
+
+        fetch('/create_payment_intent', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                total_price: {{ total_price }}  // Total price in pence
+            }),
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                document.getElementById('card-errors').textContent = data.error;
+            } else {
+                stripe.confirmCardPayment(data.client_secret, {
+                    payment_method: {
+                        card: card,
+                    },
+                })
+                .then(function(result) {
+                    if (result.error) {
+                        document.getElementById('card-errors').textContent = result.error.message;
+                    } else {
+                        if (result.paymentIntent.status === 'succeeded') {
+                            window.location.href = '/success';  // Redirect to success page
+                        }
+                    }
+                });
+            }
+        })
+        .catch(function(error) {
+            console.error('Error:', error);
+            document.getElementById('card-errors').textContent = 'Payment failed. Please try again later.';
+        });
+    });
+</script>
+
+</body>
+</html>

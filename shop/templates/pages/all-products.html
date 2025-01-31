@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.min.css') }}">
+</head>
+<body>
+
+<div class="container mt-5">
+    <h2 class="text-center mb-4">Products</h2>
+
+    <div class="d-flex justify-content-end mb-3 top-right">
+        <a href="{{ url_for('view_cart') }}" class="btn btn-primary">View Cart</a>
+    </div>
+
+    <div class="product-list">
+        {% for product in products %}
+        <div class="card mb-4">
+            <div class="row g-0">
+                <div class="col-md-4">
+                    <img src="{{ url_for('static', filename='images/' ~ product.image_url) }}" class="img-fluid rounded-start" alt="{{ product.name }}">
+                </div>
+                <div class="col-md-8">
+                    <div class="card-body">
+                        <h5 class="card-title">{{ product.name }}</h5>
+                        <p class="card-text">{{ product.description }}</p>
+                        <p class="card-text"><strong>Price:</strong> £{{ product.price }}</p>
+                        <form method="POST" action="{{ url_for('add_to_cart', product_id=product.id) }}">
+                            <div class="mb-3">
+                                <label for="quantity_{{ product.id }}" class="form-label">Quantity:</label>
+                                <input type="number" id="quantity_{{ product.id }}" name="quantity" class="form-control" value="1" min="1" required>
+                            </div>
+                            <button type="submit" class="btn btn-success">Add to Cart</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+        <a href="{{ url_for('logout') }}" class="btn btn-primary">Log Out</a>
+    </div>
+
+
+</div>
+
+<script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js') }}"></script>
+</body>
+</html>
