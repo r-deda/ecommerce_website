@@ -50,13 +50,9 @@
                             <div class="mb-3">
                                 {{ render_field(form.confirm, class="form-control", placeholder="Confirm Password") }}
                             </div>
-                            <div class="mb-3">
-                                {{ render_field(form.recaptcha) }} <!-- Add ReCaptcha here -->
-                            </div>
                             <button type="submit" class="btn btn-primary w-100">Register</button>
                         </form>
 
-                        <!-- Link to login page for existing users -->
                         <div class="mt-3 text-center">
                             <p>Have an account already? <a href="{{ url_for('login') }}">Log in</a></p>
                         </div>
