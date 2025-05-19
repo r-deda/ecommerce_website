@@ -1,8 +1,6 @@
-from flask import Flask
+from shop import app
 import socket
 import os
-
-app = Flask(__name__)
 
 def get_available_port(max_retries=10):
     for attempt in range(max_retries):
@@ -20,7 +18,8 @@ if __name__ == '__main__':
     port = get_available_port()
     if port is not None:
         debug_mode = os.environ.get('DEBUG', 'False').lower() in ['true', '1', 'yes']
-        print(f"Starting app on port {port} with debug={debug_mode}")
+        print(f"Starting SecureCart application on port {port} with debug={debug_mode}")
         app.run(debug=debug_mode, host='0.0.0.0', port=port)
     else:
-        print("No available ports found.  Application cannot start.")
+        print("Error: No available ports found. Application cannot start.")
+        print("Please ensure ports 5000-5009 are available.")
