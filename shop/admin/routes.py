@@ -1,6 +1,9 @@
-from .forms import *
-from .models import *
+from shop import app, db, bcrypt
+from flask import render_template, request, session, redirect, url_for, flash, jsonify
+import stripe
 import re
+from .forms import RegistrationForm, LoginForm, AdminRegistrationForm, ProductForm
+from .models import User, Admin, Product, Order, OrderItem
 
 # home page
 @app.route("/")

@@ -1,5 +1,5 @@
-from shop import *
-from datetime import *
+from shop import db
+from datetime import datetime
 
 # User table (table for the SecureCart users)
 class User(db.Model):

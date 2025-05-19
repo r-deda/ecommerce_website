@@ -1,1 +1,1 @@
-web: gunicorn securecart:app
+web: gunicorn run:app
