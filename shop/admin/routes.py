@@ -57,7 +57,7 @@ def register():
             flash('The passwords do not match. Please re-enter the passwords.', 'danger')
             return render_template('pages/register.html', form=form)
 
-        hash_password = bcrypt.generate_password_hash(form.password.data) # hash the user's password
+        hash_password = bcrypt.generate_password_hash(form.password.data).decode('utf-8')  # hash and decode to string
 
         # adding the user's details to the database
         user = User(
@@ -135,7 +135,7 @@ def admin_register():
             flash('The passwords do not match. Please re-enter the passwords.', 'danger')
             return render_template('pages/admin-register.html', form=form)
 
-        hash_password = bcrypt.generate_password_hash(form.password.data) # hash the password
+        hash_password = bcrypt.generate_password_hash(form.password.data).decode('utf-8')  # hash and decode to string
 
         # add the admin's details to the Admin table of the database
         admin = Admin(
