@@ -2,7 +2,7 @@ from wtforms import *
 from wtforms.validators import *
 from flask_wtf import FlaskForm
 from flask_wtf.file import FileField, FileRequired, FileAllowed
-from flask_wtf.recaptcha import RecaptchaField
+# from flask_wtf.recaptcha import RecaptchaField
 
 # form used for registering customers
 class RegistrationForm(FlaskForm):
@@ -12,13 +12,13 @@ class RegistrationForm(FlaskForm):
     email = EmailField('Email Address', [DataRequired(), Length(min=4, max=100)])
     password = PasswordField('New Password', [DataRequired()])
     confirm = PasswordField('Repeat Password', [DataRequired()])
-    recaptcha = RecaptchaField()
+    # recaptcha = RecaptchaField()
 
 # form used for registering customers
 class LoginForm(FlaskForm):
     username = StringField('Username', [DataRequired(), Length(min=4, max=25)])
     password = PasswordField('New Password', [DataRequired()])
-    recaptcha = RecaptchaField()
+    # recaptcha = RecaptchaField()
 
 # form used for registering admins
 class AdminRegistrationForm(FlaskForm):
@@ -26,7 +26,7 @@ class AdminRegistrationForm(FlaskForm):
     email = EmailField('Email Address', [DataRequired(), Length(min=6, max=35)])
     password = PasswordField('New Password', [DataRequired()])
     confirm = PasswordField('Repeat Password', [DataRequired()])
-    recaptcha = RecaptchaField()
+    # recaptcha = RecaptchaField()
 
 # form used for adding products
 class ProductForm(FlaskForm):
