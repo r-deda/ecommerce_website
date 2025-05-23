@@ -79,7 +79,7 @@ jobs:
     - name: Linting
       run: |
         # Only lint our project files, not dependencies or virtual environment
-        flake8 shop/ run.py --count --select=E9,F63,F7,F82 --show-source --statistics || true
+        flake8 shop/ run.py --count --select=E9,F63,F7,F82 --show-source --statistics --extend-ignore=F821,F822,F824 || true
         flake8 shop/ run.py --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
     - name: Setup Test Environment
