@@ -387,8 +387,7 @@ jobs:
 
     - name: Install Wapiti (if not cached)
       run: |
-        sudo apt-get update
-        sudo apt-get install -y wapiti
+        pip install wapiti, greenlet
 
     - name: Start Application
       run: |
