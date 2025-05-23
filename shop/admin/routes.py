@@ -32,7 +32,6 @@ def register():
     form = RegistrationForm()
     if form.validate_on_submit(): # validate the user's input into the form
         password_errors = validate_password(form.password.data) # run the validate_password function above
-
         # list all of the errors with the user's password
         if password_errors:
             for error in password_errors:

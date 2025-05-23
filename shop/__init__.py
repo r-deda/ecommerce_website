@@ -27,7 +27,3 @@ app.config['RECAPTCHA_PRIVATE_KEY'] = os.environ.get('RECAPTCHA_PRIVATE_KEY')
 
 # import routes after app creation to avoid circular imports
 from shop.admin.routes import *
-
-# create database tables
-with app.app_context():
-    db.create_all()
