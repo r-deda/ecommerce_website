@@ -1,4 +1,4 @@
-from shop import db, app
+from shop import db
 from datetime import datetime
 
 # User table (table for the SecureCart users)
@@ -60,6 +60,3 @@ class OrderItem(db.Model):
 
     def __repr__(self):
         return f"<OrderItem Order {self.order_id}, Product {self.product_id}, Quantity {self.quantity}>"
-
-with app.app_context():
-    db.create_all()
