@@ -387,7 +387,7 @@ jobs:
 
     - name: Install Wapiti (if not cached)
       run: |
-        pip install wapiti, greenlet
+        pip install wapiti greenlet
 
     - name: Start Application
       run: |
