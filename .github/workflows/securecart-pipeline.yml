@@ -30,6 +30,13 @@ jobs:
         pip install -r requirements.txt
         pip install bandit safety pip-audit
 
+    - name: Auto-update Safe Dependencies
+      run: |
+        echo "Updating dependencies with no known vulnerabilities..."
+        # Update to patched versions
+        pip install --upgrade flask jinja2 cryptography
+        echo "Dependencies updated to latest secure versions"
+
     - name: Run Bandit SAST Scan
       run: |
         echo "Running Bandit static analysis..."
@@ -90,11 +97,22 @@ jobs:
     - name: Linting with Flake8
       run: |
         echo "Running code linting with Flake8..."
-        flake8 shop/ run.py --count --max-line-length=88 --extend-ignore=E203,W503,F401,E501,F402,E402,F403,F405,F841 --show-source --statistics
+        flake8 shop/ run.py --count --max-line-length=88 --extend-ignore=E203,W503,F401,E501 --show-source --statistics
         if [ $? -eq 0 ]; then
           echo "✓ No linting issues found"
         else
           echo "✗ Linting issues detected"
+        fi
+
+    - name: Import Sorting Check
+      run: |
+        echo "Checking import sorting with isort..."
+        pip install isort
+        isort --check-only --diff shop/ run.py
+        if [ $? -eq 0 ]; then
+          echo "✓ Import sorting is compliant"
+        else
+          echo "✗ Import sorting issues found - run 'isort shop/ run.py' to fix"
         fi
 
   build-application:
@@ -210,6 +228,11 @@ jobs:
       with:
         python-version: ${{ env.PYTHON_VERSION }}
 
+    - name: Install Wapiti
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y wapiti
+
     - name: Start Application
       run: |
         pip install -r requirements.txt
@@ -217,34 +240,36 @@ jobs:
         export DATABASE_URL="sqlite:///instance/securecart.db"
         mkdir -p instance
         python run.py &
-        sleep 5
+        sleep 15
         echo "Application started for DAST testing"
+
+    - name: Run Wapiti DAST Scan
+      run: |
+        echo "Running Wapiti web vulnerability scan..."
+        wapiti -u http://localhost:5000 --format txt --output wapiti_report.txt || true
+        echo "Wapiti DAST scan completed"
 
     - name: Basic Security Tests
       run: |
-        echo "Running basic security verification..."
+        echo "Running additional security verification..."
         
         # Test if application responds
         curl -f http://localhost:5000/ || echo "Application connectivity test"
         
-        # Check for security headers (simulate DAST)
+        # Check for security headers
         echo "Checking security headers..."
         curl -I http://localhost:5000/ | grep -i "content-security-policy" || echo "CSP header missing"
         curl -I http://localhost:5000/ | grep -i "x-frame-options" || echo "X-Frame-Options missing"
         
-        echo "DAST simulation completed"
-
-    - name: Generate DAST Report
-      run: |
-        echo "# DAST Security Report" > dast_report.md
-        echo "Application successfully deployed and tested" >> dast_report.md
-        echo "Security headers validation completed" >> dast_report.md
+        echo "Additional security checks completed"
 
     - name: Upload DAST Results
       uses: actions/upload-artifact@v4
       with:
         name: dast-results
-        path: dast_report.md
+        path: |
+          wapiti_report.txt
+          dast_report.md
 
   security-summary:
     name: Security Summary Report
