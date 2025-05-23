@@ -309,23 +309,6 @@ jobs:
         echo "Security alerts configured"
         echo "Compliance monitoring active"
 
-  security-report:
-    name: Generate Security Summary
-    runs-on: macos-latest
-    needs: [security-analysis, security-testing-dast]
-    if: always()
-
-    steps:
-    - name: Download All Security Reports
-      uses: actions/download-artifact@v3
-      with:
-        name: security-reports
-
-    - name: Download DAST Reports
-      uses: actions/download-artifact@v3
-      with:
-        name: dast-reports
-
     security-report:
       name: Generate Security Summary
       runs-on: ubuntu-latest
