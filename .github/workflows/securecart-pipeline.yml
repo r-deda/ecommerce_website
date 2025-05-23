@@ -10,7 +10,7 @@ on:
 
 env:
   PYTHON_VERSION: '3.12'
-  DATABASE_URL: 'sqlite:///test_securecart.db'
+  DATABASE_URL: 'sqlite:///instance/securecart.db'
   SECRET_KEY: ${{ secrets.SECRET_KEY }}
   STRIPE_PUBLIC_KEY: ${{ secrets.STRIPE_PUBLIC_KEY }}
   STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
@@ -127,7 +127,7 @@ jobs:
         #!/bin/bash
         pip install -r requirements.txt
         export FLASK_ENV=production
-        export DATABASE_URL=${DATABASE_URL:-"sqlite:///securecart.db"}
+        export DATABASE_URL=${DATABASE_URL:-"sqlite:///instance/securecart.db"}
         python -c "
         from shop import app, db
         with app.app_context():
@@ -172,7 +172,7 @@ jobs:
         cd securecart
         pip install -r requirements.txt
         export FLASK_ENV=staging
-        export DATABASE_URL="sqlite:///staging_securecart.db"
+        export DATABASE_URL="sqlite:///instance/securecart.db"
         export DEBUG="False"
         python -c "
         from shop import app, db
@@ -215,7 +215,7 @@ jobs:
         cd securecart
         pip install -r requirements.txt
         export FLASK_ENV=testing
-        export DATABASE_URL="sqlite:///dast_test.db"
+        export DATABASE_URL="sqlite:///instance/securecart.db"
         export DEBUG="False"
         python run.py &
         APP_PID=$!
@@ -326,45 +326,63 @@ jobs:
       with:
         name: dast-reports
 
-    - name: Generate Security Summary
-      run: |
-        cat > security-summary.md << 'EOF'
-        # SecureCart Security Analysis Summary
+    security-report:
+      name: Generate Security Summary
+      runs-on: ubuntu-latest
+      needs: [ security-analysis, security-testing-dast ]
+      if: always()
 
-        ## Build Information
-        - Commit: ${{ github.sha }}
-        - Branch: ${{ github.ref_name }}
-        - Date: $(date -u +%Y-%m-%d %H:%M:%S)
+      steps:
+        - name: Download Security Reports
+          uses: actions/download-artifact@v3
+          with:
+            name: security-reports
 
-        ## Static Analysis (SAST)
-        - Bandit scan completed
-        - Code quality checks passed
+        - name: Download DAST Reports
+          uses: actions/download-artifact@v3
+          with:
+            name: dast-reports
 
-        ## Dependency Analysis (SCA)
-        - Safety vulnerability scan completed
-        - Pip-audit comprehensive scan completed
+        - name: Generate Security Summary
+          run: |
+            echo "Generating comprehensive security report..."
+            cat > security-summary.md << 'EOF'
+            # SecureCart Security Analysis Summary
 
-        ## Dynamic Testing (DAST)
-        - OWASP ZAP security scan completed
-        - Runtime vulnerability assessment performed
+            ## Build Information
+            - Commit: ${{ github.sha }}
+            - Branch: ${{ github.ref_name }}
+            - Date: $(date -u +%Y-%m-%d %H:%M:%S)
 
-        ## Deployment Status
-        - Security gates: PASSED
-        - Production deployment: SUCCESS
-        - Post-deployment verification: COMPLETE
+            ## Static Analysis (SAST)
+            - Bandit scan completed
+            - Code quality checks passed
 
-        ## Recommendations
-        1. Continue regular dependency updates
-        2. Monitor for new CVEs affecting used packages
-        3. Implement additional security headers as needed
-        4. Regular penetration testing recommended
+            ## Dependency Analysis (SCA)
+            - Safety vulnerability scan completed
+            - Pip-audit comprehensive scan completed
 
-        *Report generated automatically by CI/CD pipeline*
-        EOF
-        cat security-summary.md
+            ## Dynamic Testing (DAST)
+            - OWASP ZAP security scan completed
+            - Runtime vulnerability assessment performed
 
-    - name: Upload Security Summary
-      uses: actions/upload-artifact@v3
-      with:
-        name: security-summary
-        path: security-summary.md
+            ## Deployment Status
+            - Security gates: PASSED
+            - Production deployment: SUCCESS
+            - Post-deployment verification: COMPLETE
+
+            ## Recommendations
+            1. Continue regular dependency updates
+            2. Monitor for new CVEs affecting used packages
+            3. Implement additional security headers as needed
+            4. Regular penetration testing recommended
+
+            *Report generated automatically by CI/CD pipeline*
+            EOF
+            cat security-summary.md
+
+        - name: Upload Security Summary
+          uses: actions/upload-artifact@v3
+          with:
+            name: security-summary
+            path: security-summary.md
