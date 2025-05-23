@@ -253,19 +253,6 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: dast-results
-        path: wapiti_report.txt test"
-
-        # Check for security headers
-        echo "Checking security headers..."
-        curl -I http://localhost:5000/ | grep -i "content-security-policy" || echo "CSP header missing"
-        curl -I http://localhost:5000/ | grep -i "x-frame-options" || echo "X-Frame-Options missing"
-        
-        echo "Additional security checks completed"
-
-    - name: Upload DAST Results
-      uses: actions/upload-artifact@v4
-      with:
-        name: dast-results
         path: |
           wapiti_report.txt
           dast_report.md
