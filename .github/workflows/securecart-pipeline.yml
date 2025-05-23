@@ -309,63 +309,56 @@ jobs:
         echo "Security alerts configured"
         echo "Compliance monitoring active"
 
-    security-report:
-      name: Generate Security Summary
-      runs-on: ubuntu-latest
-      needs: [ security-analysis, security-testing-dast ]
-      if: always()
+  security-report:
+    name: Generate Security Summary
+    runs-on: macos-latest
+    needs: [ security-analysis, security-testing-dast ]
+    if: always()
 
-      steps:
-        - name: Download Security Reports
-          uses: actions/download-artifact@v3
-          with:
-            name: security-reports
+    steps:
+      - name: Download Security Reports
+        uses: actions/download-artifact@v3
+        with:
+          name: security-reports
 
-        - name: Download DAST Reports
-          uses: actions/download-artifact@v3
-          with:
-            name: dast-reports
+      - name: Download DAST Reports
+        uses: actions/download-artifact@v3
+        with:
+          name: dast-reports
 
-        - name: Generate Security Summary
-          run: |
-            echo "Generating comprehensive security report..."
-            cat > security-summary.md << 'EOF'
-            # SecureCart Security Analysis Summary
+      - name: Generate Security Summary
+        run: |
+          echo "Generating comprehensive security report..."
+          cat > security-summary.md << 'EOF'
+          # SecureCart Security Analysis Summary
+          ## Build Information
+          - Commit: ${{ github.sha }}
+          - Branch: ${{ github.ref_name }}
+          - Date: $(date -u +%Y-%m-%d %H:%M:%S)
+          ## Static Analysis (SAST)
+          - Bandit scan completed
+          - Code quality checks passed
+          ## Dependency Analysis (SCA)
+          - Safety vulnerability scan completed
+          - Pip-audit comprehensive scan completed
+          ## Dynamic Testing (DAST)
+          - OWASP ZAP security scan completed
+          - Runtime vulnerability assessment performed
+          ## Deployment Status
+          - Security gates: PASSED
+          - Production deployment: SUCCESS
+          - Post-deployment verification: COMPLETE
+          ## Recommendations
+          1. Continue regular dependency updates
+          2. Monitor for new CVEs affecting used packages
+          3. Implement additional security headers as needed
+          4. Regular penetration testing recommended
+          *Report generated automatically by CI/CD pipeline*
+          EOF
+          cat security-summary.md
 
-            ## Build Information
-            - Commit: ${{ github.sha }}
-            - Branch: ${{ github.ref_name }}
-            - Date: $(date -u +%Y-%m-%d %H:%M:%S)
-
-            ## Static Analysis (SAST)
-            - Bandit scan completed
-            - Code quality checks passed
-
-            ## Dependency Analysis (SCA)
-            - Safety vulnerability scan completed
-            - Pip-audit comprehensive scan completed
-
-            ## Dynamic Testing (DAST)
-            - OWASP ZAP security scan completed
-            - Runtime vulnerability assessment performed
-
-            ## Deployment Status
-            - Security gates: PASSED
-            - Production deployment: SUCCESS
-            - Post-deployment verification: COMPLETE
-
-            ## Recommendations
-            1. Continue regular dependency updates
-            2. Monitor for new CVEs affecting used packages
-            3. Implement additional security headers as needed
-            4. Regular penetration testing recommended
-
-            *Report generated automatically by CI/CD pipeline*
-            EOF
-            cat security-summary.md
-
-        - name: Upload Security Summary
-          uses: actions/upload-artifact@v3
-          with:
-            name: security-summary
-            path: security-summary.md
+      - name: Upload Security Summary
+        uses: actions/upload-artifact@v3
+        with:
+          name: security-summary
+          path: security-summary.md
