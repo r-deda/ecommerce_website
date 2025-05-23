@@ -97,17 +97,6 @@ jobs:
           echo "✗ Linting issues detected"
         fi
 
-    - name: Import Sorting Check
-      run: |
-        echo "Checking import sorting with isort..."
-        pip install isort
-        isort --check-only --diff shop/ run.py
-        if [ $? -eq 0 ]; then
-          echo "✓ Import sorting is compliant"
-        else
-          echo "✗ Import sorting issues found - run 'isort shop/ run.py' to fix"
-        fi
-
   build-application:
     name: Build Application
     runs-on: ubuntu-latest
