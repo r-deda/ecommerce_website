@@ -97,11 +97,22 @@ jobs:
     - name: Linting with Flake8
       run: |
         echo "Running code linting with Flake8..."
-        flake8 shop/ run.py --count --max-line-length=88 --extend-ignore=E203,W503,F401,E501,E402,F403,F405,F841 --show-source --statistics
+        flake8 shop/ run.py --count --max-line-length=88 --extend-ignore=E203,W503,F401,E501 --show-source --statistics
         if [ $? -eq 0 ]; then
           echo "✓ No linting issues found"
         else
           echo "✗ Linting issues detected"
+        fi
+
+    - name: Import Sorting Check
+      run: |
+        echo "Checking import sorting with isort..."
+        pip install isort
+        isort --check-only --diff shop/ run.py
+        if [ $? -eq 0 ]; then
+          echo "✓ Import sorting is compliant"
+        else
+          echo "✗ Import sorting issues found - run 'isort shop/ run.py' to fix"
         fi
 
   build-application:
@@ -238,13 +249,12 @@ jobs:
         wapiti -u http://localhost:5000 --format txt --output wapiti_report.txt || true
         echo "Wapiti DAST scan completed"
 
-    - name: Basic Security Tests
-      run: |
-        echo "Running additional security verification..."
-        
-        # Test if application responds
-        curl -f http://localhost:5000/ || echo "Application connectivity test"
-        
+    - name: Upload DAST Results
+      uses: actions/upload-artifact@v4
+      with:
+        name: dast-results
+        path: wapiti_report.txt test"
+
         # Check for security headers
         echo "Checking security headers..."
         curl -I http://localhost:5000/ | grep -i "content-security-policy" || echo "CSP header missing"
@@ -263,7 +273,7 @@ jobs:
   security-summary:
     name: Security Summary Report
     runs-on: ubuntu-latest
-    needs: [security-analysis, post-deployment-security]
+    needs: [security-analysis, dast-security-gate]
     if: always()
 
     steps:
@@ -278,8 +288,9 @@ jobs:
         echo "### Security Testing Completed:" >> security_summary.md
         echo "- Static Application Security Testing (SAST) with Bandit" >> security_summary.md
         echo "- Software Composition Analysis (SCA) with Safety and Pip-Audit" >> security_summary.md
-        echo "- Dynamic Application Security Testing (DAST) with OWASP ZAP" >> security_summary.md
+        echo "- Dynamic Application Security Testing (DAST) with Wapiti" >> security_summary.md
         echo "- Code quality checks" >> security_summary.md
+        echo "- Two-stage security gates implemented" >> security_summary.md
         echo "" >> security_summary.md
         echo "### Pipeline Status: COMPLETED" >> security_summary.md
         cat security_summary.md
