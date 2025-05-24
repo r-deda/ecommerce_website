@@ -108,30 +108,30 @@ jobs:
       run: |
         echo "Running comprehensive security analysis..."
         
-        # Run Bandit SAST Scan
+        # Run Bandit SAST Scan (exclude venv and __pycache__)
         echo "Running Bandit static analysis..."
-        bandit -r run.py shop/ -f json -o bandit_report.json || true
-        bandit -r run.py shop/ || true
+        bandit -r run.py shop/ -f json -o bandit_report.json -x */venv/*,*/__pycache__/*,*/env/*,*/.env/* || true
+        bandit -r run.py shop/ -x */venv/*,*/__pycache__/*,*/env/*,*/.env/* || true
         
         # Run Snyk Code SAST Scan
         echo "Running Snyk SAST analysis..."
         snyk auth 7763ec57-5521-456c-9b43-7a2e1deeb046
-        snyk code test --json > snyk_code_report.json || true
-        snyk code test || true
+        snyk code test --json --exclude=venv,env,__pycache__,.env > snyk_code_report.json || true
+        snyk code test --exclude=venv,env,__pycache__,.env || true
         
         # Run Snyk SCA Scan
         echo "Running Snyk dependency scan..."
-        snyk test --json > snyk_test_report.json || true
-        snyk test || true
+        snyk test --json --exclude=venv,env,__pycache__,.env > snyk_test_report.json || true
+        snyk test --exclude=venv,env,__pycache__,.env || true
         
-        # Run Safety SCA Scan
+        # Run Safety SCA Scan (exclude common virtual env directories)
         echo "Running Safety dependency scan..."
-        safety check -r requirements.txt --json > safety_report.json || true
+        safety check -r requirements.txt --json --output safety_report.json || true
         safety check -r requirements.txt || true
         
-        # Run Pip-Audit
+        # Run Pip-Audit (with proper output flag)
         echo "Running pip-audit scan..."
-        pip-audit -r requirements.txt --format=json -o pip_audit_report.json || true
+        pip-audit -r requirements.txt --format=json --output=pip_audit_report.json || true
         pip-audit -r requirements.txt || true
 
     - name: Notify Security Scan Success
@@ -292,44 +292,55 @@ jobs:
       run: |
         echo "Evaluating security gate criteria..."
         
+        # Install jq if not available
+        sudo apt-get update && sudo apt-get install -y jq || true
+        
         # Check Bandit results for high severity issues
-        if [ -f bandit_report.json ]; then
+        if [ -f bandit_report.json ] && [ -s bandit_report.json ]; then
           HIGH_ISSUES=$(jq '[.results[] | select(.issue_severity == "HIGH")] | length' bandit_report.json 2>/dev/null || echo "0")
           echo "High severity SAST issues found: $HIGH_ISSUES"
           if [ "$HIGH_ISSUES" -gt 2 ]; then
             echo "SECURITY GATE FAILED: Too many high severity issues ($HIGH_ISSUES)"
             exit 1
           fi
+        else
+          echo "Bandit report not found or empty"
         fi
         
         # Check Snyk Code results for high severity issues
-        if [ -f snyk_code_report.json ]; then
+        if [ -f snyk_code_report.json ] && [ -s snyk_code_report.json ]; then
           SNYK_HIGH_ISSUES=$(jq '[.runs[0].results[] | select(.level == "error")] | length' snyk_code_report.json 2>/dev/null || echo "0")
           echo "High severity Snyk Code issues found: $SNYK_HIGH_ISSUES"
           if [ "$SNYK_HIGH_ISSUES" -gt 15 ]; then
             echo "SECURITY GATE FAILED: Too many Snyk Code high severity issues ($SNYK_HIGH_ISSUES)"
             exit 1
           fi
+        else
+          echo "Snyk Code report not found or empty"
         fi
         
         # Check Safety results for critical vulnerabilities
-        if [ -f safety_report.json ]; then
+        if [ -f safety_report.json ] && [ -s safety_report.json ]; then
           CRITICAL_VULNS=$(jq '.vulnerabilities | length' safety_report.json 2>/dev/null || echo "0")
           echo "Critical vulnerabilities found: $CRITICAL_VULNS"
           if [ "$CRITICAL_VULNS" -gt 5 ]; then
             echo "SECURITY GATE FAILED: Too many critical vulnerabilities ($CRITICAL_VULNS)"
             exit 1
           fi
+        else
+          echo "Safety report not found or empty"
         fi
         
         # Check Snyk Test results for critical vulnerabilities
-        if [ -f snyk_test_report.json ]; then
+        if [ -f snyk_test_report.json ] && [ -s snyk_test_report.json ]; then
           SNYK_CRITICAL_VULNS=$(jq '[.vulnerabilities[] | select(.severity == "critical" or .severity == "high")] | length' snyk_test_report.json 2>/dev/null || echo "0")
           echo "Snyk critical/high vulnerabilities found: $SNYK_CRITICAL_VULNS"
           if [ "$SNYK_CRITICAL_VULNS" -gt 5 ]; then
             echo "SECURITY GATE FAILED: Too many Snyk critical/high vulnerabilities ($SNYK_CRITICAL_VULNS)"
             exit 1
           fi
+        else
+          echo "Snyk Test report not found or empty"
         fi
         
         echo "SECURITY GATE PASSED: Deployment approved"
@@ -491,9 +502,17 @@ jobs:
             sleep 3
           done
           
-          # Generate reports
-          curl "http://localhost:8080/JSON/core/view/htmlreport/" > zap_report.html || true
-          curl "http://localhost:8080/JSON/core/view/jsonreport/" > zap_report.json || true
+          # Generate reports using correct ZAP 2.16.1 API endpoints
+          echo "Generating ZAP reports..."
+          curl "http://localhost:8080/JSON/core/view/alerts/" > zap_report.json || true
+          curl "http://localhost:8080/JSON/reports/action/generate/?title=ZAP%20Security%20Report&template=traditional-html&reportDir=." > zap_report.html || true
+          
+          # Alternative: Get basic alerts as HTML if reports addon fails
+          if [ ! -s zap_report.html ]; then
+            echo "<html><head><title>ZAP Security Report</title></head><body>" > zap_report.html
+            curl "http://localhost:8080/JSON/core/view/alerts/" >> zap_report.html
+            echo "</body></html>" >> zap_report.html
+          fi
           
           # Stop ZAP daemon
           curl "http://localhost:8080/JSON/core/action/shutdown/" || true
