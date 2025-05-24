@@ -375,9 +375,9 @@ jobs:
       - name: Install ZAP from GitHub
         run: |
           cd /tmp
-          wget https://github.com/zaproxy/zaproxy/releases/download/v2.14.0/ZAP_2.14.0_Linux.tar.gz
-          tar -xzf ZAP_2.14.0_Linux.tar.gz
-          sudo mv ZAP_2.14.0 /opt/zaproxy
+          wget https://github.com/zaproxy/zaproxy/releases/download/v2.16.1/ZAP_2.16.1_Linux.tar.gz
+          tar -xzf ZAP_2.16.1_Linux.tar.gz
+          sudo mv ZAP_2.16.1 /opt/zaproxy
           sudo chmod +x /opt/zaproxy/zap.sh
           echo "ZAP installed successfully"
 
@@ -391,7 +391,7 @@ jobs:
           export DATABASE_URL="sqlite:///instance/securecart.db"
           mkdir -p instance
           python run.py &
-          sleep 5
+          sleep 15
           echo "Application started for DAST testing"
 
       - name: Cache DAST Results
