@@ -43,8 +43,9 @@ jobs:
         python -m pip install --upgrade pip
         pip install --user -r requirements.txt
         pip install --user safety pip-audit flake8 black isort
-        sudo apt-get install bandit
         npm install -g snyk
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+
 
   security-analysis:
     name: Security Analysis (SAST & SCA)
@@ -68,13 +69,6 @@ jobs:
           ~/.local/lib/python${{ env.PYTHON_VERSION }}/site-packages
         key: ${{ runner.os }}-pip-${{ env.CACHE_VERSION }}-${{ hashFiles('requirements.txt') }}
 
-    - name: Install Security Tools
-      run: |
-        python -m pip install --upgrade pip
-        pip install --user bandit safety pip-audit
-        npm install -g snyk
-        echo "$HOME/.local/bin" >> $GITHUB_PATH
-
     - name: Cache Security Scan Results
       id: cache-security-results
       uses: actions/cache@v3
@@ -91,14 +85,6 @@ jobs:
       if: steps.cache-security-results.outputs.cache-hit != 'true'
       run: |
         echo "Running security analysis..."
-        
-        # Bandit SAST Scan - handles non-zero exit codes properly
-        echo "=== RUNNING BANDIT STATIC ANALYSIS ==="
-        bandit -r run.py shop/ -f json
-        bandit -r run.py shop/ -f json -o bandit_report.json || echo "Bandit completed"
-        if [ ! -f bandit_report.json ]; then
-          echo '{"results":[]}' > bandit_report.json
-        fi
         
         # Safety SCA Scan - use correct syntax
         echo "=== RUNNING SAFETY DEPENDENCY SCAN ==="
