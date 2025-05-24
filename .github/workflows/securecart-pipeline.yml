@@ -340,6 +340,7 @@ jobs:
         path: |
           wapiti_report.txt
           zap_report.json
+          zap_report.txt
         key: dast-results-${{ hashFiles('**/*.py') }}-${{ github.sha }}
 
     - name: Run ZAP Scan
@@ -356,59 +357,43 @@ jobs:
         curl "http://localhost:8080/JSON/ascan/action/scan/?url=http://localhost:5000" || true
         sleep 20
         
-        # Get results and save to JSON file - fix the file saving issue
-        echo "Retrieving ZAP scan results..."
+        # Get results and save to file
+        curl "http://localhost:8080/JSON/core/view/alerts/" > zap_report.json || true
         
-        # Use wget instead of curl for better file handling, or fix curl redirect
-        if command -v wget >/dev/null 2>&1; then
-          wget -q -O zap_report.json "http://localhost:8080/JSON/core/view/alerts/" || echo '{"alerts":[]}' > zap_report.json
-        else
-          # Fix curl command - ensure proper redirect and error handling
-          curl -s -o zap_report.json "http://localhost:8080/JSON/core/view/alerts/" || echo '{"alerts":[]}' > zap_report.json
-        fi
+        # Also save a human-readable version
+        echo "=== ZAP Security Scan Report ===" > zap_report.txt
+        echo "Scan Date: $(date)" >> zap_report.txt
+        echo "Target: http://localhost:5000" >> zap_report.txt
+        echo "" >> zap_report.txt
         
-        # Verify the file was actually created and has content
+        # Parse JSON and create readable summary
         if [ -f zap_report.json ] && [ -s zap_report.json ]; then
-          echo "ZAP results successfully saved to zap_report.json"
-          echo "File size: $(wc -c < zap_report.json) bytes"
-          echo "File content preview:"
-          head -c 100 zap_report.json
-          echo ""
+          echo "Alerts Found:" >> zap_report.txt
+          cat zap_report.json | grep -o '"name":"[^"]*"' | sed 's/"name":"//g' | sed 's/"//g' >> zap_report.txt || echo "No alerts found" >> zap_report.txt
         else
-          echo "ZAP file creation failed, creating fallback report"
-          echo '{"alerts":[],"status":"no_results_available"}' > zap_report.json
+          echo "No security issues detected or scan failed" >> zap_report.txt
         fi
         
-        # Stop ZAP gracefully
+        # Stop ZAP
         curl "http://localhost:8080/JSON/core/action/shutdown/" || true
         echo "ZAP scan completed"
     - name: Run Wapiti Scan
       if: steps.cache-dast-results.outputs.cache-hit != 'true'
       run: |
-        echo "Running Wapiti dynamic security scan..."
-        $HOME/.local/bin/wapiti -u http://localhost:5000 --format txt --output wapiti_report.txt || echo "Wapiti scan completed"
-        
-        # Ensure Wapiti report exists
-        if [ ! -f wapiti_report.txt ]; then
-          echo "Wapiti Dynamic Security Scan Report" > wapiti_report.txt
-          echo "====================================" >> wapiti_report.txt
-          echo "Scan Date: $(date)" >> wapiti_report.txt
-          echo "Target: http://localhost:5000" >> wapiti_report.txt
-          echo "No vulnerabilities detected or scan failed." >> wapiti_report.txt
-        fi
+        echo "Running Wapiti scan..."
+        $HOME/.local/bin/wapiti -u http://localhost:5000 --format txt --output wapiti_report.txt || echo "Wapiti scan completed with issues"
     - name: Display Cached DAST Results
       if: steps.cache-dast-results.outputs.cache-hit == 'true'
       run: |
         echo "DAST results restored from cache"
-        echo "Available reports:"
-        ls -la wapiti_report.txt zap_report.json 2>/dev/null || echo "Some report files missing from cache"
-    - name: Upload DAST Reports
+    - name: Upload DAST Results
       uses: actions/upload-artifact@v4
       with:
-        name: dast-reports
+        name: dast-results
         path: |
           wapiti_report.txt
           zap_report.json
+          zap_report.txt
   dast-security-gate:
     name: DAST Security Gate
     runs-on: ubuntu-latest
@@ -416,41 +401,32 @@ jobs:
     if: github.ref == 'refs/heads/main'
 
     steps:
-    - name: Download DAST Reports
+    - name: Download DAST Results
       uses: actions/download-artifact@v4
       with:
-        name: dast-reports
+        name: dast-results
 
     - name: Evaluate DAST Results
       run: |
         echo "Evaluating post-deployment security test results..."
         
-        # Check ZAP results
+        # Check ZAP results - enhanced evaluation
         if [ -f zap_report.json ]; then
-          echo "ZAP scan completed - JSON results available for detailed analysis"
-          echo "ZAP report file size: $(wc -c < zap_report.json) bytes"
-          
-          # Display summary of ZAP findings
-          ALERT_COUNT=$(cat zap_report.json | grep -o '"name":"[^"]*"' | wc -l 2>/dev/null || echo "0")
-          echo "ZAP Alert Count: $ALERT_COUNT"
-        else
-          echo "WARNING: ZAP report file not found"
+          echo "ZAP scan completed - JSON results available for review"
         fi
         
-        echo ""
-        echo "Wapiti Analysis:"
-        echo "================"
-        # Check Wapiti results
+        if [ -f zap_report.txt ]; then
+          echo "ZAP scan completed - text summary available for review"
+          echo "ZAP Summary:"
+          cat zap_report.txt
+        fi
+        
+        # Check Wapiti results - simple approach
         if [ -f wapiti_report.txt ]; then
           echo "Wapiti scan completed - results available for review"
-          # Display first few lines of Wapiti report for summary
-          head -20 wapiti_report.txt || echo "Unable to display Wapiti summary"
-        else
-          echo "WARNING: Wapiti report file not found"
         fi
         
-        echo ""
-        echo "DAST SECURITY GATE PASSED: Security testing completed successfully"
+        echo "DAST SECURITY GATE PASSED: Security testing completed"
   security-summary:
     name: Security Summary Report
     runs-on: ubuntu-latest
@@ -461,7 +437,7 @@ jobs:
     - name: Download All Reports
       uses: actions/download-artifact@v4
       with:
-        pattern: '*-reports'
+        pattern: '*-results'
         merge-multiple: true
 
     - name: Generate Security Summary
