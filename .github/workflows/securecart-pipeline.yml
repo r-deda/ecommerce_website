@@ -391,7 +391,7 @@ jobs:
           export DATABASE_URL="sqlite:///instance/securecart.db"
           mkdir -p instance
           python run.py &
-          sleep 15
+          sleep 5
           echo "Application started for DAST testing"
 
       - name: Cache DAST Results
@@ -411,13 +411,13 @@ jobs:
           echo "Running ZAP comprehensive scan..."
           cd /opt/zaproxy
           ./zap.sh -daemon -host 0.0.0.0 -port 8080 &
-          sleep 30
+          sleep 15
           
           # Use ZAP API for comprehensive scan
           curl "http://localhost:8080/JSON/spider/action/scan/?url=http://localhost:5000" || true
-          sleep 10
+          sleep 5
           curl "http://localhost:8080/JSON/ascan/action/scan/?url=http://localhost:5000" || true
-          sleep 60
+          sleep 20
           
           # Generate reports
           curl "http://localhost:8080/JSON/core/view/htmlreport/" > zap_report.html || true
