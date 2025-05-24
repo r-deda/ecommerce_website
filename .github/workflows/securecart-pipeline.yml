@@ -629,8 +629,12 @@ jobs:
             echo "ZAP already cached"
           fi
 
-      - name: Install Wapiti via pip
+      - name: Install Wapiti and Fix Bcrypt Compatibility
         run: |
+          # Fix bcrypt compatibility issue first
+          echo "Fixing bcrypt compatibility for Wapiti..."
+          pip install --user --upgrade bcrypt passlib
+          
           # Install wapiti3 via pip for more reliable installation
           pip install --user wapiti3 greenlet
           echo "$HOME/.local/bin" >> $GITHUB_PATH
