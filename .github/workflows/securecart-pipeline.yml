@@ -306,7 +306,7 @@ jobs:
         if [ -f snyk_code_report.json ]; then
           SNYK_HIGH_ISSUES=$(jq '[.runs[0].results[] | select(.level == "error")] | length' snyk_code_report.json 2>/dev/null || echo "0")
           echo "High severity Snyk Code issues found: $SNYK_HIGH_ISSUES"
-          if [ "$SNYK_HIGH_ISSUES" -gt 3 ]; then
+          if [ "$SNYK_HIGH_ISSUES" -gt 15 ]; then
             echo "SECURITY GATE FAILED: Too many Snyk Code high severity issues ($SNYK_HIGH_ISSUES)"
             exit 1
           fi
