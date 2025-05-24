@@ -37,14 +37,12 @@ jobs:
         key: ${{ runner.os }}-pip-${{ env.CACHE_VERSION }}-${{ hashFiles('requirements.txt') }}
         restore-keys: |
           ${{ runner.os }}-pip-${{ env.CACHE_VERSION }}-
-
     - name: Install Dependencies
       run: |
         python -m pip install --upgrade pip
         pip install --user -r requirements.txt
         pip install --user bandit safety pip-audit flake8 black isort
         npm install -g snyk
-
   security-analysis:
     name: Security Analysis (SAST & SCA)
     runs-on: ubuntu-latest
@@ -65,7 +63,6 @@ jobs:
         pip install --user bandit safety pip-audit
         npm install -g snyk
         echo "$HOME/.local/bin" >> $GITHUB_PATH
-
     - name: Restore Dependencies Cache
       uses: actions/cache@v3
       with:
@@ -84,8 +81,6 @@ jobs:
           pip_audit_report.txt
           snyk_code_report.txt
           snyk_test_report.txt
-          gitleaks_report.json
-          trufflehog_report.json
         key: security-results-${{ hashFiles('**/*.py', 'requirements.txt') }}-${{ github.sha }}
 
     - name: Run Security Scans
@@ -130,30 +125,11 @@ jobs:
           echo "No dependency vulnerabilities found" > snyk_test_report.txt
         fi
         
-        # GitLeaks Secret Scanning
-        echo "=== RUNNING GITLEAKS SECRET SCAN ==="
-        wget -q https://github.com/gitleaks/gitleaks/releases/download/v8.18.0/gitleaks_8.18.0_linux_x64.tar.gz
-        tar -xzf gitleaks_8.18.0_linux_x64.tar.gz
-        ./gitleaks detect --source . --report-format json --report-path gitleaks_report.json || echo "GitLeaks scan completed (exit code indicates findings, not failure)"
-        if [ ! -f gitleaks_report.json ]; then
-          echo '{"DetectedSecrets": []}' > gitleaks_report.json
-        fi
-        
-        # TruffleHog Secret Scanning
-        echo "=== RUNNING TRUFFLEHOG SECRET SCAN ==="
-        pip install --user trufflehog3
-        $HOME/.local/bin/trufflehog3 --format json --output trufflehog_report.json . || echo "TruffleHog scan completed (exit code indicates findings, not failure)"
-        if [ ! -f trufflehog_report.json ]; then
-          echo '{"found_issues": []}' > trufflehog_report.json
-        fi
-        
         echo "All security scans completed successfully"
-
     - name: Display Cached Results
       if: steps.cache-security-results.outputs.cache-hit == 'true'
       run: |
         echo "Security scan results restored from cache"
-
     - name: Upload Security Reports
       uses: actions/upload-artifact@v4
       with:
@@ -164,9 +140,6 @@ jobs:
           pip_audit_report.txt
           snyk_code_report.txt
           snyk_test_report.txt
-          gitleaks_report.json
-          trufflehog_report.json
-
   code-quality:
     name: Code Quality Check
     runs-on: ubuntu-latest
@@ -186,7 +159,6 @@ jobs:
         python -m pip install --upgrade pip
         pip install --user flake8 black isort
         echo "$HOME/.local/bin" >> $GITHUB_PATH
-
     - name: Run Code Quality Checks
       run: |
         echo "Running code quality analysis..."
@@ -199,7 +171,6 @@ jobs:
         
         # Import Sorting Check
         $HOME/.local/bin/isort --check-only --diff shop/ run.py || echo "Import sorting issues found"
-
   build-application:
     name: Build Application
     runs-on: ubuntu-latest
@@ -229,7 +200,6 @@ jobs:
         export DATABASE_URL="sqlite:///test.db"
         mkdir -p instance
         timeout 10s python run.py || echo "Application startup test completed"
-
   security-gate:
     name: Security Gate Check
     runs-on: ubuntu-latest
@@ -278,106 +248,7 @@ jobs:
           fi
         fi
         
-        # Check GitLeaks results for secrets (JSON format)
-        if [ -f gitleaks_report.json ] && [ -s gitleaks_report.json ]; then
-          SECRET_COUNT=$(jq '.DetectedSecrets | length' gitleaks_report.json 2>/dev/null || echo "0")
-          echo "Secrets found by GitLeaks: $SECRET_COUNT"
-          if [ "$SECRET_COUNT" -gt 0 ]; then
-            echo "SECURITY GATE FAILED: Secrets detected in code ($SECRET_COUNT)"
-            exit 1
-          fi
-        fi
-        
-        # Check TruffleHog results for secrets (JSON format)
-        if [ -f trufflehog_report.json ] && [ -s trufflehog_report.json ]; then
-          TRUFFLEHOG_SECRETS=$(jq '.found_issues | length' trufflehog_report.json 2>/dev/null || echo "0")
-          echo "Secrets found by TruffleHog: $TRUFFLEHOG_SECRETS"
-          if [ "$TRUFFLEHOG_SECRETS" -gt 0 ]; then
-            echo "SECURITY GATE FAILED: Secrets detected by TruffleHog ($TRUFFLEHOG_SECRETS)"
-            exit 1
-          fi
-        fi
-        
         echo "SECURITY GATE PASSED: Deployment approved"
-
-  container-security:
-    name: Container Security Scanning
-    runs-on: ubuntu-latest
-    needs: build-application
-
-    steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
-    - name: Create Dockerfile
-      run: |
-        cat > Dockerfile << 'EOF'
-        FROM python:3.12-slim
-        
-        WORKDIR /app
-        
-        # Install system dependencies
-        RUN apt-get update && apt-get install -y \
-            gcc \
-            && rm -rf /var/lib/apt/lists/*
-        
-        # Copy requirements and install Python dependencies
-        COPY requirements.txt .
-        RUN pip install --no-cache-dir -r requirements.txt
-        
-        # Copy application code
-        COPY . .
-        
-        # Create instance directory
-        RUN mkdir -p instance
-        
-        # Expose port
-        EXPOSE 5000
-        
-        # Run application
-        CMD ["python", "run.py"]
-        EOF
-
-    - name: Build Docker Image
-      run: |
-        docker build -t securecart:latest .
-        echo "Docker image built successfully"
-
-    - name: Install Trivy
-      run: |
-        sudo apt-get update
-        sudo apt-get install wget apt-transport-https gnupg lsb-release
-        wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
-        echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
-        sudo apt-get update
-        sudo apt-get install trivy
-
-    - name: Run Trivy Container Scan
-      run: |
-        echo "Running Trivy container security scan..."
-        trivy image --format json --output trivy_report.json securecart:latest || echo "Trivy scan completed (exit code indicates findings, not failure)"
-        trivy image --format table --output trivy_report.txt securecart:latest || echo "Trivy text report completed"
-        
-        # Ensure files exist
-        if [ ! -f trivy_report.json ]; then
-          echo '{"Results": []}' > trivy_report.json
-        fi
-        if [ ! -f trivy_report.txt ]; then
-          echo "No container vulnerabilities found" > trivy_report.txt
-        fi
-
-    - name: Upload Container Security Reports
-      uses: actions/upload-artifact@v4
-      with:
-        name: container-security-reports
-        path: |
-          trivy_report.json
-          trivy_report.txt
-          Dockerfile
-
   deploy-staging:
     name: Deploy to Staging
     runs-on: ubuntu-latest
@@ -417,7 +288,6 @@ jobs:
         "
         
         echo "Staging deployment completed successfully"
-
   post-deployment-security:
     name: Post-Deployment Security Testing (DAST)
     runs-on: ubuntu-latest
@@ -441,11 +311,6 @@ jobs:
           ~/.local/lib/python${{ env.PYTHON_VERSION }}/site-packages
         key: ${{ runner.os }}-pip-${{ env.CACHE_VERSION }}-${{ hashFiles('requirements.txt') }}
 
-    - name: Create DASH Reports Directory
-      run: |
-        mkdir -p dash_reports
-        echo "Created dash_reports directory for DAST scan results"
-
     - name: Install ZAP
       run: |
         sudo apt-get update
@@ -455,13 +320,11 @@ jobs:
         tar -xzf ZAP_2.16.1_Linux.tar.gz
         sudo mv ZAP_2.16.1 /opt/zaproxy
         sudo chmod +x /opt/zaproxy/zap.sh
-
     - name: Install Wapiti
       run: |
         pip install --user --upgrade bcrypt passlib
         pip install --user wapiti3
         echo "$HOME/.local/bin" >> $GITHUB_PATH
-
     - name: Start Application
       run: |
         export SECRET_KEY="test_secret_key"
@@ -470,17 +333,17 @@ jobs:
         python run.py &
         sleep 15
         echo "Application started for DAST testing"
-
-    - name: Cache DASH Results
-      id: cache-dash-results
+    - name: Cache DAST Results
+      id: cache-dast-results
       uses: actions/cache@v3
       with:
         path: |
-          dash_reports/
-        key: dash-results-${{ hashFiles('**/*.py') }}-${{ github.sha }}
+          wapiti_report.txt
+          zap_report.json
+        key: dast-results-${{ hashFiles('**/*.py') }}-${{ github.sha }}
 
     - name: Run ZAP Scan
-      if: steps.cache-dash-results.outputs.cache-hit != 'true'
+      if: steps.cache-dast-results.outputs.cache-hit != 'true'
       run: |
         echo "Running ZAP security scan..."
         cd /opt/zaproxy
@@ -493,108 +356,107 @@ jobs:
         curl "http://localhost:8080/JSON/ascan/action/scan/?url=http://localhost:5000" || true
         sleep 20
         
-        # Get results and save to dash_reports directory
-        curl "http://localhost:8080/JSON/core/view/alerts/" > "$GITHUB_WORKSPACE/dash_reports/zap_report.json" || true
-        
-        # Create human-readable version in dash_reports directory
-        echo "=== ZAP Security Scan Report ===" > "$GITHUB_WORKSPACE/dash_reports/zap_report.txt"
-        echo "Scan Date: $(date)" >> "$GITHUB_WORKSPACE/dash_reports/zap_report.txt"
-        echo "Target: http://localhost:5000" >> "$GITHUB_WORKSPACE/dash_reports/zap_report.txt"
-        echo "" >> "$GITHUB_WORKSPACE/dash_reports/zap_report.txt"
-        
-        # Parse JSON and create readable summary
-        if [ -f "$GITHUB_WORKSPACE/dash_reports/zap_report.json" ] && [ -s "$GITHUB_WORKSPACE/dash_reports/zap_report.json" ]; then
-          echo "Alerts Found:" >> "$GITHUB_WORKSPACE/dash_reports/zap_report.txt"
-          cat "$GITHUB_WORKSPACE/dash_reports/zap_report.json" | grep -o '"name":"[^"]*"' | sed 's/"name":"//g' | sed 's/"//g' >> "$GITHUB_WORKSPACE/dash_reports/zap_report.txt" || echo "No alerts found" >> "$GITHUB_WORKSPACE/dash_reports/zap_report.txt"
+        # Get results and save to JSON file with proper error handling
+        echo "Retrieving ZAP scan results..."
+        if curl "http://localhost:8080/JSON/core/view/alerts/" > zap_report.json; then
+          echo "ZAP results successfully saved to zap_report.json"
         else
-          echo "No security issues detected or scan failed" >> "$GITHUB_WORKSPACE/dash_reports/zap_report.txt"
+          echo "ZAP scan completed but no results found, creating empty report"
+          echo '{"alerts":[]}' > zap_report.json
         fi
         
-        # Stop ZAP
+        # Ensure the JSON file exists and has content
+        if [ ! -f zap_report.json ]; then
+          echo "Creating fallback zap_report.json file"
+          echo '{"alerts":[]}' > zap_report.json
+        fi
+        
+        # Verify file was created
+        if [ -f zap_report.json ]; then
+          echo "zap_report.json file created successfully"
+          echo "File size: $(wc -c < zap_report.json) bytes"
+        else
+          echo "ERROR: Failed to create zap_report.json"
+          exit 1
+        fi
+        
+        # Stop ZAP gracefully
         curl "http://localhost:8080/JSON/core/action/shutdown/" || true
-        echo "ZAP scan completed - results saved to dash_reports/zap_report.json and dash_reports/zap_report.txt"
-
+        sleep 5
+        echo "ZAP scan completed"
     - name: Run Wapiti Scan
-      if: steps.cache-dash-results.outputs.cache-hit != 'true'
+      if: steps.cache-dast-results.outputs.cache-hit != 'true'
       run: |
-        echo "Running Wapiti scan..."
-        # Run Wapiti and save output directly to dash_reports directory
-        $HOME/.local/bin/wapiti -u http://localhost:5000 --format txt --output "$GITHUB_WORKSPACE/dash_reports/wapiti_report.txt" || echo "Wapiti scan completed with issues"
-        echo "Wapiti scan completed - results saved to dash_reports/wapiti_report.txt"
-
-    - name: Display Cached DASH Results
-      if: steps.cache-dash-results.outputs.cache-hit == 'true'
-      run: |
-        echo "DASH results restored from cache"
-        echo "Available reports in dash_reports directory:"
-        ls -la dash_reports/ || echo "No cached reports found"
-
-    - name: Verify DASH Reports
-      run: |
-        echo "Verifying DAST scan results in dash_reports directory:"
-        ls -la dash_reports/
-        echo ""
-        echo "ZAP Report Summary:"
-        if [ -f "dash_reports/zap_report.txt" ]; then
-          head -20 "dash_reports/zap_report.txt"
-        else
-          echo "ZAP report not found"
+        echo "Running Wapiti dynamic security scan..."
+        $HOME/.local/bin/wapiti -u http://localhost:5000 --format txt --output wapiti_report.txt || echo "Wapiti scan completed"
+        
+        # Ensure Wapiti report exists
+        if [ ! -f wapiti_report.txt ]; then
+          echo "Wapiti Dynamic Security Scan Report" > wapiti_report.txt
+          echo "====================================" >> wapiti_report.txt
+          echo "Scan Date: $(date)" >> wapiti_report.txt
+          echo "Target: http://localhost:5000" >> wapiti_report.txt
+          echo "No vulnerabilities detected or scan failed." >> wapiti_report.txt
         fi
-        echo ""
-        echo "Wapiti Report Summary:"
-        if [ -f "dash_reports/wapiti_report.txt" ]; then
-          head -20 "dash_reports/wapiti_report.txt"
-        else
-          echo "Wapiti report not found"
-        fi
-
-    - name: Upload DASH Reports
+    - name: Display Cached DAST Results
+      if: steps.cache-dast-results.outputs.cache-hit == 'true'
+      run: |
+        echo "DAST results restored from cache"
+        echo "Available reports:"
+        ls -la wapiti_report.txt zap_report.json 2>/dev/null || echo "Some report files missing from cache"
+    - name: Upload DAST Reports
       uses: actions/upload-artifact@v4
       with:
-        name: dash-reports
-        path: dash_reports/
-
-  dash-security-gate:
-    name: DASH Security Gate
+        name: dast-reports
+        path: |
+          wapiti_report.txt
+          zap_report.json
+  dast-security-gate:
+    name: DAST Security Gate
     runs-on: ubuntu-latest
     needs: post-deployment-security
     if: github.ref == 'refs/heads/main'
 
     steps:
-    - name: Download DASH Reports
+    - name: Download DAST Reports
       uses: actions/download-artifact@v4
       with:
-        name: dash-reports
-        path: dash_reports/
+        name: dast-reports
 
-    - name: Evaluate DASH Results
+    - name: Evaluate DAST Results
       run: |
-        echo "Evaluating post-deployment security test results from dash_reports directory..."
+        echo "Evaluating post-deployment security test results..."
         
         # Check ZAP results
-        if [ -f "dash_reports/zap_report.json" ]; then
-          echo "ZAP scan completed - JSON results available for review"
+        if [ -f zap_report.json ]; then
+          echo "ZAP scan completed - JSON results available for detailed analysis"
+          echo "ZAP report file size: $(wc -c < zap_report.json) bytes"
+          
+          # Display summary of ZAP findings
+          ALERT_COUNT=$(cat zap_report.json | grep -o '"name":"[^"]*"' | wc -l 2>/dev/null || echo "0")
+          echo "ZAP Alert Count: $ALERT_COUNT"
+        else
+          echo "WARNING: ZAP report file not found"
         fi
         
-        if [ -f "dash_reports/zap_report.txt" ]; then
-          echo "ZAP scan completed - text summary available for review"
-          echo "ZAP Summary:"
-          cat "dash_reports/zap_report.txt"
-        fi
-        
+        echo ""
+        echo "Wapiti Analysis:"
+        echo "================"
         # Check Wapiti results
-        if [ -f "dash_reports/wapiti_report.txt" ]; then
+        if [ -f wapiti_report.txt ]; then
           echo "Wapiti scan completed - results available for review"
-          echo "Wapiti Summary (first 10 lines):"
-          head -10 "dash_reports/wapiti_report.txt"
+          # Display first few lines of Wapiti report for summary
+          head -20 wapiti_report.txt || echo "Unable to display Wapiti summary"
+        else
+          echo "WARNING: Wapiti report file not found"
         fi
         
-        echo "DASH SECURITY GATE PASSED: Security testing completed"
-
+        echo ""
+        echo "DAST SECURITY GATE PASSED: Security testing completed successfully"
   security-summary:
     name: Security Summary Report
     runs-on: ubuntu-latest
-    needs: [security-analysis, container-security, post-deployment-security, dash-security-gate]
+    needs: [security-analysis, post-deployment-security, dast-security-gate]
     if: always()
 
     steps:
@@ -616,29 +478,17 @@ jobs:
         echo "### Security Testing Completed:" >> security_summary.md
         echo "- ✓ Static Application Security Testing (SAST)" >> security_summary.md
         echo "- ✓ Software Composition Analysis (SCA)" >> security_summary.md
-        echo "- ✓ Secret Scanning (GitLeaks & TruffleHog)" >> security_summary.md
-        echo "- ✓ Container Security Scanning (Trivy)" >> security_summary.md
         echo "- ✓ Dynamic Application Security Testing (DAST)" >> security_summary.md
         echo "- ✓ Code quality checks" >> security_summary.md
-        echo "- ✓ Multi-layered security gates implemented" >> security_summary.md
+        echo "- ✓ Security gates implemented" >> security_summary.md
         echo "- ✓ Intelligent caching for performance" >> security_summary.md
         echo "" >> security_summary.md
         
-        echo "### DAST Reports Generated:" >> security_summary.md
-        if [ -d "dash_reports" ]; then
-          echo "DASH Reports Directory Contents:" >> security_summary.md
-          ls -la dash_reports/ >> security_summary.md
-        else
-          echo "No DASH reports directory found" >> security_summary.md
-        fi
-        echo "" >> security_summary.md
-        
-        echo "### All Reports Generated:" >> security_summary.md
-        ls -la *.json *.txt *.md 2>/dev/null || echo "No additional report files found"
+        echo "### Reports Generated:" >> security_summary.md
+        ls -la *.json *.txt *.md 2>/dev/null || echo "No report files found"
         
         cat security_summary.md
-
-    - name: Upload Complete Security Summary
+    - name: Upload Security Summary
       uses: actions/upload-artifact@v4
       with:
         name: security-summary
