@@ -708,15 +708,26 @@ jobs:
           echo "Running Wapiti web vulnerability scan..."
           export PATH="$HOME/.local/bin:$PATH"
           
-          # Try multiple approaches for wapiti
+          # Try multiple approaches for wapiti with better error handling
+          WAPITI_SUCCESS=false
+          
           if command -v wapiti &> /dev/null; then
-            wapiti -u http://localhost:5000 --format txt --output wapiti_report.txt || true
+            echo "Using wapiti from PATH: $(which wapiti)"
+            wapiti -u http://localhost:5000 --format txt --output wapiti_report.txt && WAPITI_SUCCESS=true
           elif [ -f "$HOME/.local/bin/wapiti" ]; then
-            $HOME/.local/bin/wapiti -u http://localhost:5000 --format txt --output wapiti_report.txt || true
+            echo "Using wapiti from user local bin"
+            "$HOME/.local/bin/wapiti" -u http://localhost:5000 --format txt --output wapiti_report.txt && WAPITI_SUCCESS=true
           else
-            python -m wapiti -u http://localhost:5000 --format txt --output wapiti_report.txt || true
+            echo "Trying wapiti as Python module"
+            python -m wapiti -u http://localhost:5000 --format txt --output wapiti_report.txt && WAPITI_SUCCESS=true
           fi
-          echo "Wapiti DAST scan completed"
+          
+          if [ "$WAPITI_SUCCESS" = false ]; then
+            echo "All wapiti execution methods failed, creating minimal report"
+            echo "Wapiti scan failed - tool not available or incompatible" > wapiti_report.txt
+          else
+            echo "✓ Wapiti scan completed successfully"
+          fi
 
       - name: Notify DAST Success
         if: success() && steps.cache-dast-results.outputs.cache-hit != 'true'
