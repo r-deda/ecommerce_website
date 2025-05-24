@@ -97,21 +97,13 @@ jobs:
       uses: actions/cache@v3
       with:
         path: |
-          ~/.local/bin/bandit
-          ~/.local/bin/safety
-          ~/.local/bin/pip-audit
-          ~/.npm
+          ~/.local/lib/python${{ env.PYTHON_VERSION }}/site-packages
         key: ${{ runner.os }}-security-tools-${{ env.CACHE_VERSION }}
 
-    - name: Install Security Tools (if needed)
+    - name: Install Security Tools
       run: |
-        export PATH="$HOME/.local/bin:$PATH"
-        if ! command -v bandit &> /dev/null; then
-          pip install --user bandit safety pip-audit flake8 black isort
-        fi
-        if ! command -v snyk &> /dev/null; then
-          npm install -g snyk
-        fi
+        pip install --user bandit safety pip-audit flake8 black isort
+        npm install -g snyk
 
     - name: Add Tools to PATH
       run: |
