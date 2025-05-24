@@ -46,6 +46,7 @@ jobs:
           ~/.local/bin/bandit
           ~/.local/bin/safety
           ~/.local/bin/pip-audit
+          ~/.npm
         key: ${{ runner.os }}-security-tools-${{ env.CACHE_VERSION }}
         restore-keys: |
           ${{ runner.os }}-security-tools-
@@ -59,12 +60,14 @@ jobs:
       if: steps.cache-security-tools.outputs.cache-hit != 'true'
       run: |
         pip install --user bandit safety pip-audit
+        npm install -g snyk
     - name: Verify Installation
       run: |
         python -c "import flask, jinja2; print('Core dependencies loaded successfully')"
         bandit --version
         safety --version
         pip-audit --version
+        snyk --version
   security-analysis:
     name: Security Analysis (SAST & SCA)
     runs-on: ubuntu-latest
@@ -95,6 +98,7 @@ jobs:
           ~/.local/bin/bandit
           ~/.local/bin/safety
           ~/.local/bin/pip-audit
+          ~/.npm
         key: ${{ runner.os }}-security-tools-${{ env.CACHE_VERSION }}
 
     - name: Add Tools to PATH
@@ -108,6 +112,8 @@ jobs:
           bandit_report.json
           safety_report.json
           pip_audit_report.json
+          snyk_code_report.json
+          snyk_test_report.json
         key: security-results-${{ hashFiles('**/*.py', 'requirements.txt') }}-${{ github.sha }}
 
     - name: Auto-update Safe Dependencies
@@ -125,14 +131,38 @@ jobs:
         echo "Running Bandit static analysis..."
         bandit -r run.py shop/ -f json -o bandit_report.json || true
         bandit -r run.py shop/ || true
+        
+        # Run Snyk Code SAST Scan
+        echo "Running Snyk SAST analysis..."
+        snyk auth 7763ec57-5521-456c-9b43-7a2e1deeb046
+        snyk code test --json > snyk_code_report.json || true
+        snyk code test || true
+        
+        # Run Snyk SCA Scan
+        echo "Running Snyk dependency scan..."
+        snyk test --json > snyk_test_report.json || true
+        snyk test || true
+        
         # Run Safety SCA Scan
         echo "Running Safety dependency scan..."
         safety check -r requirements.txt --json > safety_report.json || true
         safety check -r requirements.txt || true
+        
         # Run Pip-Audit
         echo "Running pip-audit scan..."
         pip-audit -r requirements.txt --format=json -o pip_audit_report.json || true
         pip-audit -r requirements.txt || true
+
+    - name: Notify Security Scan Success
+      if: success()
+      run: |
+        echo "::notice title=Security Analysis Complete::All security scans completed successfully"
+
+    - name: Notify Security Scan Failure
+      if: failure()
+      run: |
+        echo "::error title=Security Analysis Failed::Security scans encountered errors - check logs for details"
+
     - name: Display Cached Results
       if: steps.cache-security-results.outputs.cache-hit == 'true'
       run: |
@@ -146,6 +176,8 @@ jobs:
           bandit_report.json
           safety_report.json
           pip_audit_report.json
+          snyk_code_report.json
+          snyk_test_report.json
   code-quality:
     name: Code Quality Check
     runs-on: ubuntu-latest
@@ -284,6 +316,16 @@ jobs:
           fi
         fi
         
+        # Check Snyk Code results for high severity issues
+        if [ -f snyk_code_report.json ]; then
+          SNYK_HIGH_ISSUES=$(jq '[.runs[0].results[] | select(.level == "error")] | length' snyk_code_report.json 2>/dev/null || echo "0")
+          echo "High severity Snyk Code issues found: $SNYK_HIGH_ISSUES"
+          if [ "$SNYK_HIGH_ISSUES" -gt 3 ]; then
+            echo "SECURITY GATE FAILED: Too many Snyk Code high severity issues ($SNYK_HIGH_ISSUES)"
+            exit 1
+          fi
+        fi
+        
         # Check Safety results for critical vulnerabilities
         if [ -f safety_report.json ]; then
           CRITICAL_VULNS=$(jq '.vulnerabilities | length' safety_report.json 2>/dev/null || echo "0")
@@ -294,7 +336,27 @@ jobs:
           fi
         fi
         
+        # Check Snyk Test results for critical vulnerabilities
+        if [ -f snyk_test_report.json ]; then
+          SNYK_CRITICAL_VULNS=$(jq '[.vulnerabilities[] | select(.severity == "critical" or .severity == "high")] | length' snyk_test_report.json 2>/dev/null || echo "0")
+          echo "Snyk critical/high vulnerabilities found: $SNYK_CRITICAL_VULNS"
+          if [ "$SNYK_CRITICAL_VULNS" -gt 5 ]; then
+            echo "SECURITY GATE FAILED: Too many Snyk critical/high vulnerabilities ($SNYK_CRITICAL_VULNS)"
+            exit 1
+          fi
+        fi
+        
         echo "SECURITY GATE PASSED: Deployment approved"
+
+    - name: Notify Security Gate Success
+      if: success()
+      run: |
+        echo "::notice title=Security Gate Passed::Pre-deployment security validation successful - deployment approved"
+
+    - name: Notify Security Gate Failure
+      if: failure()
+      run: |
+        echo "::error title=Security Gate Failed::Pre-deployment security gate blocked deployment due to critical vulnerabilities"
   deploy-staging:
     name: Deploy to Staging
     runs-on: ubuntu-latest
@@ -335,6 +397,16 @@ jobs:
         "
         
         echo "Staging deployment completed successfully"
+
+    - name: Notify Deployment Success
+      if: success()
+      run: |
+        echo "::notice title=Staging Deployment Complete::Application successfully deployed to staging environment"
+
+    - name: Notify Deployment Failure
+      if: failure()
+      run: |
+        echo "::error title=Staging Deployment Failed::Failed to deploy application to staging environment"
 
   post-deployment-security:
     name: Post-Deployment Security Testing (DAST)
@@ -410,14 +482,27 @@ jobs:
         run: |
           echo "Running ZAP comprehensive scan..."
           cd /opt/zaproxy
-          ./zap.sh -daemon -host 0.0.0.0 -port 8080 &
+          ./zap.sh -daemon -host 0.0.0.0 -port 8080 -config api.disablekey=true &
           sleep 15
           
           # Use ZAP API for comprehensive scan
           curl "http://localhost:8080/JSON/spider/action/scan/?url=http://localhost:5000" || true
-          sleep 5
+          sleep 10
+          
+          # Wait for spider to complete
+          while [ "$(curl -s 'http://localhost:8080/JSON/spider/view/status/' | grep -o '"status":"[^"]*"' | cut -d'"' -f4)" = "RUNNING" ]; do
+            echo "Spider still running..."
+            sleep 2
+          done
+          
           curl "http://localhost:8080/JSON/ascan/action/scan/?url=http://localhost:5000" || true
           sleep 20
+          
+          # Wait for active scan to complete
+          while [ "$(curl -s 'http://localhost:8080/JSON/ascan/view/status/' | grep -o '"status":"[^"]*"' | cut -d'"' -f4)" = "RUNNING" ]; do
+            echo "Active scan still running..."
+            sleep 3
+          done
           
           # Generate reports
           curl "http://localhost:8080/JSON/core/view/htmlreport/" > zap_report.html || true
@@ -433,6 +518,16 @@ jobs:
           echo "Running Wapiti web vulnerability scan..."
           wapiti -u http://localhost:5000 --format txt --output wapiti_report.txt || true
           echo "Wapiti DAST scan completed"
+
+      - name: Notify DAST Success
+        if: success() && steps.cache-dast-results.outputs.cache-hit != 'true'
+        run: |
+          echo "::notice title=DAST Scans Complete::Dynamic security testing completed with ZAP and Wapiti"
+
+      - name: Notify DAST Failure
+        if: failure()
+        run: |
+          echo "::error title=DAST Scans Failed::Dynamic security testing encountered errors during execution"
 
       - name: Create DAST Report Summary (if not cached)
         if: steps.cache-dast-results.outputs.cache-hit != 'true'
@@ -515,6 +610,16 @@ jobs:
           
           echo "DAST SECURITY GATE PASSED: Application security verified by both ZAP and Wapiti"
 
+      - name: Notify DAST Gate Success
+        if: success()
+        run: |
+          echo "::notice title=DAST Security Gate Passed::Post-deployment security validation successful - application is secure"
+
+      - name: Notify DAST Gate Failure
+        if: failure()
+        run: |
+          echo "::error title=DAST Security Gate Failed::Post-deployment security gate detected critical vulnerabilities in running application"
+
   security-summary:
     name: Security Summary Report
     runs-on: ubuntu-latest
@@ -539,8 +644,8 @@ jobs:
         echo "" >> security_summary.md
         
         echo "### Security Testing Completed:" >> security_summary.md
-        echo "- (Done) Static Application Security Testing (SAST) with Bandit" >> security_summary.md
-        echo "- (Done) Software Composition Analysis (SCA) with Safety and Pip-Audit" >> security_summary.md
+        echo "- (Done) Static Application Security Testing (SAST) with Bandit and Snyk Code" >> security_summary.md
+        echo "- (Done) Software Composition Analysis (SCA) with Safety, Pip-Audit, and Snyk Test" >> security_summary.md
         echo "- (Done) Dynamic Application Security Testing (DAST) with ZAP and Wapiti" >> security_summary.md
         echo "- (Done) Code quality checks with Flake8 and Black" >> security_summary.md
         echo "- (Done) Two-stage security gates implemented" >> security_summary.md
@@ -567,6 +672,14 @@ jobs:
           echo "" >> security_summary.md
         fi
         
+        if [ -f snyk_code_report.json ]; then
+          echo "### Snyk Code Findings Summary:" >> security_summary.md
+          echo "\`\`\`" >> security_summary.md
+          jq -r '.runs[0].results[] | "- \(.ruleId): \(.message.text)"' snyk_code_report.json 2>/dev/null || echo "No Snyk Code issues found" >> security_summary.md
+          echo "\`\`\`" >> security_summary.md
+          echo "" >> security_summary.md
+        fi
+        
         if [ -f zap_report.html ]; then
           echo "### ZAP Findings Summary:" >> security_summary.md
           echo "\`\`\`" >> security_summary.md
@@ -582,8 +695,19 @@ jobs:
           echo "\`\`\`" >> security_summary.md
         fi
         
-        echo "### Pipeline Completion Status: SUCCESS ⚡" >> security_summary.md
+        echo "### Pipeline Completion Status: SUCCESS" >> security_summary.md
         cat security_summary.md
+
+    - name: Notify Pipeline Success
+      if: success()
+      run: |
+        echo "::notice title=Security Pipeline Complete::All security validations passed - SecureCart is ready for production"
+
+    - name: Notify Pipeline Failure
+      if: failure()
+      run: |
+        echo "::error title=Security Pipeline Failed::Security pipeline encountered critical issues - review all reports"
+
     - name: Upload Complete Security Summary
       uses: actions/upload-artifact@v4
       with:
