@@ -102,8 +102,13 @@ jobs:
 
     - name: Install Security Tools
       run: |
+        python -m pip install --upgrade pip
         pip install --user bandit safety pip-audit flake8 black isort
         npm install -g snyk
+        echo "Tools installed, checking PATH..."
+        export PATH="$HOME/.local/bin:$PATH"
+        which bandit || echo "Bandit not in PATH"
+        which safety || echo "Safety not in PATH"
 
     - name: Add Tools to PATH
       run: |
