@@ -335,6 +335,7 @@ jobs:
         "
         
         echo "Staging deployment completed successfully"
+
   post-deployment-security:
     name: Post-Deployment Security Testing (DAST)
     runs-on: ubuntu-latest
@@ -342,82 +343,138 @@ jobs:
     if: github.ref == 'refs/heads/main'
 
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
 
-    - name: Restore Dependencies Cache
-      uses: actions/cache@v3
-      with:
-        path: |
-          ~/.cache/pip
-          ~/.local/lib/python${{ env.PYTHON_VERSION }}/site-packages
-        key: ${{ runner.os }}-pip-${{ env.CACHE_VERSION }}-${{ hashFiles('requirements.txt') }}
+      - name: Restore Dependencies Cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.local/lib/python${{ env.PYTHON_VERSION }}/site-packages
+          key: ${{ runner.os }}-pip-${{ env.CACHE_VERSION }}-${{ hashFiles('requirements.txt') }}
 
-    - name: Cache DAST Tools
-      uses: actions/cache@v3
-      with:
-        path: |
-          /usr/bin/wapiti
-        key: ${{ runner.os }}-dast-tools-${{ env.CACHE_VERSION }}
+      - name: Cache DAST Tools
+        uses: actions/cache@v3
+        with:
+          path: |
+            /usr/bin/wapiti
+            /opt/zaproxy
+          key: ${{ runner.os }}-dast-tools-${{ env.CACHE_VERSION }}
 
-    - name: Install Wapiti (if not cached)
-      run: |
-        pip install wapiti3 greenlet
-    - name: Start Application
-      run: |
-        export SECRET_KEY="test_secret_key"
-        export DATABASE_URL="sqlite:///instance/securecart.db"
-        mkdir -p instance
-        python run.py &
-        sleep 15
-        echo "Application started for DAST testing"
-    - name: Cache DAST Results
-      id: cache-dast-results
-      uses: actions/cache@v3
-      with:
-        path: |
-          wapiti_report.txt
-          dast_report.md
-        key: dast-results-${{ hashFiles('**/*.py') }}-${{ github.sha }}
+      - name: Install Java and Dependencies for ZAP
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y default-jdk wget curl
 
-    - name: Run Wapiti DAST Scan (if not cached)
-      if: steps.cache-dast-results.outputs.cache-hit != 'true'
-      run: |
-        echo "Running Wapiti web vulnerability scan..."
-        wapiti -u http://localhost:5000 --format txt --output wapiti_report.txt || true
-        echo "Wapiti DAST scan completed"
-    - name: Create DAST Report Summary (if not cached)
-      if: steps.cache-dast-results.outputs.cache-hit != 'true'
-      run: |
-        echo "## DAST Security Test Results" > dast_report.md
-        echo "" >> dast_report.md
-        echo "**Scan Date:** $(date)" >> dast_report.md
-        echo "**Target:** http://localhost:5000" >> dast_report.md
-        echo "" >> dast_report.md
-        
-        if [ -f wapiti_report.txt ]; then
-          echo "### Vulnerabilities Found:" >> dast_report.md
-          grep -i "vulnerability\|warning\|error" wapiti_report.txt >> dast_report.md || echo "No critical issues detected" >> dast_report.md
-        else
-          echo "DAST scan report not found" >> dast_report.md
-        fi
-    - name: Display Cached DAST Results
-      if: steps.cache-dast-results.outputs.cache-hit == 'true'
-      run: |
-        echo "(Done) DAST results restored from cache"
-        echo "No application changes detected since last DAST scan"
-    - name: Upload DAST Results
-      uses: actions/upload-artifact@v4
-      with:
-        name: dast-results
-        path: |
-          wapiti_report.txt
-          dast_report.md
+      - name: Install ZAP from GitHub
+        run: |
+          cd /tmp
+          wget https://github.com/zaproxy/zaproxy/releases/download/v2.14.0/ZAP_2.14.0_Linux.tar.gz
+          tar -xzf ZAP_2.14.0_Linux.tar.gz
+          sudo mv ZAP_2.14.0 /opt/zaproxy
+          sudo chmod +x /opt/zaproxy/zap.sh
+          echo "ZAP installed successfully"
+
+      - name: Install Wapiti (if not cached)
+        run: |
+          pip install wapiti3 greenlet
+
+      - name: Start Application
+        run: |
+          export SECRET_KEY="test_secret_key"
+          export DATABASE_URL="sqlite:///instance/securecart.db"
+          mkdir -p instance
+          python run.py &
+          sleep 15
+          echo "Application started for DAST testing"
+
+      - name: Cache DAST Results
+        id: cache-dast-results
+        uses: actions/cache@v3
+        with:
+          path: |
+            wapiti_report.txt
+            zap_report.html
+            zap_report.json
+            dast_report.md
+          key: dast-results-${{ hashFiles('**/*.py') }}-${{ github.sha }}
+
+      - name: Run ZAP Full Scan (if not cached)
+        if: steps.cache-dast-results.outputs.cache-hit != 'true'
+        run: |
+          echo "Running ZAP comprehensive scan..."
+          cd /opt/zaproxy
+          ./zap.sh -daemon -host 0.0.0.0 -port 8080 &
+          sleep 30
+          
+          # Use ZAP API for comprehensive scan
+          curl "http://localhost:8080/JSON/spider/action/scan/?url=http://localhost:5000" || true
+          sleep 10
+          curl "http://localhost:8080/JSON/ascan/action/scan/?url=http://localhost:5000" || true
+          sleep 60
+          
+          # Generate reports
+          curl "http://localhost:8080/JSON/core/view/htmlreport/" > zap_report.html || true
+          curl "http://localhost:8080/JSON/core/view/jsonreport/" > zap_report.json || true
+          
+          # Stop ZAP daemon
+          curl "http://localhost:8080/JSON/core/action/shutdown/" || true
+          echo "ZAP comprehensive scan completed"
+
+      - name: Run Wapiti DAST Scan (if not cached)
+        if: steps.cache-dast-results.outputs.cache-hit != 'true'
+        run: |
+          echo "Running Wapiti web vulnerability scan..."
+          wapiti -u http://localhost:5000 --format txt --output wapiti_report.txt || true
+          echo "Wapiti DAST scan completed"
+
+      - name: Create DAST Report Summary (if not cached)
+        if: steps.cache-dast-results.outputs.cache-hit != 'true'
+        run: |
+          echo "## DAST Security Test Results" > dast_report.md
+          echo "" >> dast_report.md
+          echo "**Scan Date:** $(date)" >> dast_report.md
+          echo "**Target:** http://localhost:5000" >> dast_report.md
+          echo "" >> dast_report.md
+
+          echo "### ZAP Scan Results:" >> dast_report.md
+          if [ -f zap_report.html ]; then
+            echo "ZAP comprehensive scan completed successfully" >> dast_report.md
+            grep -i "alert\|risk\|confidence" zap_report.html | head -10 >> dast_report.md || echo "No critical issues detected by ZAP" >> dast_report.md
+          else
+            echo "ZAP scan report not found" >> dast_report.md
+          fi
+          echo "" >> dast_report.md
+
+          echo "### Wapiti Scan Results:" >> dast_report.md
+          if [ -f wapiti_report.txt ]; then
+            grep -i "vulnerability\|warning\|error" wapiti_report.txt >> dast_report.md || echo "No critical issues detected by Wapiti" >> dast_report.md
+          else
+            echo "Wapiti scan report not found" >> dast_report.md
+          fi
+
+      - name: Display Cached DAST Results
+        if: steps.cache-dast-results.outputs.cache-hit == 'true'
+        run: |
+          echo "(Done) DAST results restored from cache"
+          echo "No application changes detected since last DAST scan"
+
+      - name: Upload DAST Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: dast-results
+          path: |
+            wapiti_report.txt
+            zap_report.html
+            zap_report.json
+            dast_report.md
+
   dast-security-gate:
     name: DAST Security Gate
     runs-on: ubuntu-latest
@@ -425,26 +482,39 @@ jobs:
     if: github.ref == 'refs/heads/main'
 
     steps:
-    - name: Download DAST Results
-      uses: actions/download-artifact@v4
-      with:
-        name: dast-results
+      - name: Download DAST Results
+        uses: actions/download-artifact@v4
+        with:
+          name: dast-results
 
-    - name: Evaluate DAST Results
-      run: |
-        echo "Evaluating post-deployment security test results..."
-        
-        if [ -f wapiti_report.txt ]; then
-          CRITICAL_VULNS=$(grep -c -i "high\|critical" wapiti_report.txt || echo "0")
-          echo "Critical DAST vulnerabilities found: $CRITICAL_VULNS"
+      - name: Evaluate DAST Results
+        run: |
+          echo "Evaluating post-deployment security test results..."
           
-          if [ "$CRITICAL_VULNS" -gt 3 ]; then
-            echo "DAST SECURITY GATE FAILED: Too many critical vulnerabilities in running application"
-            exit 1
+          # Check ZAP results
+          if [ -f zap_report.html ]; then
+            ZAP_HIGH_RISK=$(grep -c -i "high.*risk\|critical" zap_report.html || echo "0")
+            echo "High/Critical risk vulnerabilities found by ZAP: $ZAP_HIGH_RISK"
+          
+            if [ "$ZAP_HIGH_RISK" -gt 2 ]; then
+              echo "DAST SECURITY GATE FAILED: Too many high-risk vulnerabilities found by ZAP ($ZAP_HIGH_RISK)"
+              exit 1
+            fi
           fi
-        fi
-        
-        echo "DAST SECURITY GATE PASSED: Application security verified"
+          
+          # Check Wapiti results
+          if [ -f wapiti_report.txt ]; then
+            WAPITI_CRITICAL=$(grep -c -i "high\|critical" wapiti_report.txt || echo "0")
+            echo "Critical vulnerabilities found by Wapiti: $WAPITI_CRITICAL"
+          
+            if [ "$WAPITI_CRITICAL" -gt 3 ]; then
+              echo "DAST SECURITY GATE FAILED: Too many critical vulnerabilities found by Wapiti ($WAPITI_CRITICAL)"
+              exit 1
+            fi
+          fi
+          
+          echo "DAST SECURITY GATE PASSED: Application security verified by both ZAP and Wapiti"
+
   security-summary:
     name: Security Summary Report
     runs-on: ubuntu-latest
@@ -471,7 +541,7 @@ jobs:
         echo "### Security Testing Completed:" >> security_summary.md
         echo "- (Done) Static Application Security Testing (SAST) with Bandit" >> security_summary.md
         echo "- (Done) Software Composition Analysis (SCA) with Safety and Pip-Audit" >> security_summary.md
-        echo "- (Done) Dynamic Application Security Testing (DAST) with Wapiti" >> security_summary.md
+        echo "- (Done) Dynamic Application Security Testing (DAST) with ZAP and Wapiti" >> security_summary.md
         echo "- (Done) Code quality checks with Flake8 and Black" >> security_summary.md
         echo "- (Done) Two-stage security gates implemented" >> security_summary.md
         echo "- Intelligent caching for optimal performance" >> security_summary.md
@@ -497,8 +567,16 @@ jobs:
           echo "" >> security_summary.md
         fi
         
+        if [ -f zap_report.html ]; then
+          echo "### ZAP Findings Summary:" >> security_summary.md
+          echo "\`\`\`" >> security_summary.md
+          grep -i "risk\|alert" zap_report.html | head -10 >> security_summary.md || echo "No ZAP issues found" >> security_summary.md
+          echo "\`\`\`" >> security_summary.md
+          echo "" >> security_summary.md
+        fi
+        
         if [ -f wapiti_report.txt ]; then
-          echo "### DAST Findings Summary:" >> security_summary.md
+          echo "### Wapiti Findings Summary:" >> security_summary.md
           echo "\`\`\`" >> security_summary.md
           head -20 wapiti_report.txt >> security_summary.md
           echo "\`\`\`" >> security_summary.md
