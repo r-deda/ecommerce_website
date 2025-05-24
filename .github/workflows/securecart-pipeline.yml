@@ -80,10 +80,10 @@ jobs:
       with:
         path: |
           bandit_report.json
-          safety_report.json
-          pip_audit_report.json
-          snyk_code_report.json
-          snyk_test_report.json
+          safety_report.txt
+          pip_audit_report.txt
+          snyk_code_report.txt
+          snyk_test_report.txt
         key: security-results-${{ hashFiles('**/*.py', 'requirements.txt') }}-${{ github.sha }}
 
     - name: Run Security Scans
@@ -93,38 +93,42 @@ jobs:
         
         # Bandit SAST Scan - handles non-zero exit codes properly
         echo "=== RUNNING BANDIT STATIC ANALYSIS ==="
-        bandit -r run.py shop/ -f json -o bandit_report.json || echo "Bandit completed (may have findings)"
+        bandit -r run.py shop/ -f json
+        bandit -r run.py shop/ -f json -o bandit_report.json || echo "Bandit completed"
         if [ ! -f bandit_report.json ]; then
           echo '{"results":[]}' > bandit_report.json
         fi
         
         # Safety SCA Scan - use correct syntax
         echo "=== RUNNING SAFETY DEPENDENCY SCAN ==="
-        safety check -r requirements.txt --format json > safety_report.json || echo "Safety completed"
-        if [ ! -f safety_report.json ]; then
-          echo '{"vulnerabilities":[]}' > safety_report.json
+        safety check -r requirements.txt
+        safety check -r requirements.txt > safety_report.txt || echo "Safety completed"
+        if [ ! -f safety_report.txt ]; then
+          echo "No vulnerabilities found" > safety_report.txt
         fi
         
         # Pip-Audit SCA Scan
         echo "=== RUNNING PIP-AUDIT SCAN ==="
-        pip-audit -r requirements.txt --format=json > pip_audit_report.json || echo "Pip-audit completed"
-        if [ ! -f pip_audit_report.json ]; then
-          echo '{"vulnerabilities":[]}' > pip_audit_report.json
+        pip-audit -r requirements.txt
+        pip-audit -r requirements.txt > pip_audit_report.txt || echo "Pip-audit completed"
+        if [ ! -f pip_audit_report.txt ]; then
+          echo "No vulnerabilities found" > pip_audit_report.txt
         fi
         
         # Snyk Code SAST Scan
         echo "=== RUNNING SNYK SAST ANALYSIS ==="
         snyk auth 7763ec57-5521-456c-9b43-7a2e1deeb046 || echo "Snyk auth failed"
-        snyk code test shop/ --json > snyk_code_report.json || echo "Snyk Code completed"
-        if [ ! -f snyk_code_report.json ]; then
-          echo '{"runs":[{"results":[]}]}' > snyk_code_report.json
+        snyk code test shop/ run.py
+        snyk code test shop/ run.py > snyk_code_report.txt || echo "Snyk Code completed"
+        if [ ! -f snyk_code_report.txt ]; then
+          echo "No code issues found" > snyk_code_report.txt
         fi
         
         # Snyk Dependency SCA Scan - scan root directory
         echo "=== RUNNING SNYK DEPENDENCY SCAN ==="
-        snyk test . --json > snyk_test_report.json || echo "Snyk dependency scan completed"
-        if [ ! -f snyk_test_report.json ]; then
-          echo '{"vulnerabilities":[]}' > snyk_test_report.json
+        snyk test . > snyk_test_report.txt || echo "Snyk dependency scan completed"
+        if [ ! -f snyk_test_report.txt ]; then
+          echo "No dependency vulnerabilities found" > snyk_test_report.txt
         fi
 
     - name: Display Cached Results
@@ -138,10 +142,10 @@ jobs:
         name: security-reports
         path: |
           bandit_report.json
-          safety_report.json
-          pip_audit_report.json
-          snyk_code_report.json
-          snyk_test_report.json
+          safety_report.txt
+          pip_audit_report.txt
+          snyk_code_report.txt
+          snyk_test_report.txt
 
   code-quality:
     name: Code Quality Check
@@ -224,7 +228,7 @@ jobs:
       run: |
         echo "Evaluating security gate criteria..."
         
-        # Check Bandit results for high severity issues
+        # Check Bandit results for high severity issues (JSON format)
         if [ -f bandit_report.json ] && [ -s bandit_report.json ]; then
           HIGH_ISSUES=$(jq '[.results[] | select(.issue_severity == "HIGH")] | length' bandit_report.json 2>/dev/null || echo "0")
           echo "High severity SAST issues found: $HIGH_ISSUES"
@@ -234,12 +238,22 @@ jobs:
           fi
         fi
         
-        # Check Safety results for critical vulnerabilities
-        if [ -f safety_report.json ] && [ -s safety_report.json ]; then
-          CRITICAL_VULNS=$(jq '.vulnerabilities | length' safety_report.json 2>/dev/null || echo "0")
-          echo "Critical vulnerabilities found: $CRITICAL_VULNS"
+        # Check Safety results for critical vulnerabilities (text format)
+        if [ -f safety_report.txt ] && [ -s safety_report.txt ]; then
+          CRITICAL_VULNS=$(grep -c "vulnerability" safety_report.txt 2>/dev/null || echo "0")
+          echo "Critical vulnerabilities found by Safety: $CRITICAL_VULNS"
           if [ "$CRITICAL_VULNS" -gt 5 ]; then
             echo "SECURITY GATE FAILED: Too many critical vulnerabilities ($CRITICAL_VULNS)"
+            exit 1
+          fi
+        fi
+        
+        # Check pip-audit results for vulnerabilities (text format)
+        if [ -f pip_audit_report.txt ] && [ -s pip_audit_report.txt ]; then
+          PIP_AUDIT_VULNS=$(grep -c "vulnerability\|vulnerable" pip_audit_report.txt 2>/dev/null || echo "0")
+          echo "Vulnerabilities found by pip-audit: $PIP_AUDIT_VULNS"
+          if [ "$PIP_AUDIT_VULNS" -gt 5 ]; then
+            echo "SECURITY GATE FAILED: Too many pip-audit vulnerabilities ($PIP_AUDIT_VULNS)"
             exit 1
           fi
         fi
@@ -368,6 +382,7 @@ jobs:
       if: steps.cache-dast-results.outputs.cache-hit != 'true'
       run: |
         echo "Running Wapiti scan..."
+        wapiti -u http://localhost:5000
         wapiti -u http://localhost:5000 --format txt --output wapiti_report.txt || echo "Wapiti scan completed with issues"
 
     - name: Display Cached DAST Results

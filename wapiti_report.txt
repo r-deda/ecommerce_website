@@ -1,0 +1,209 @@
+********************************************************************************
+                    Wapiti 3.2.4 - wapiti-scanner.github.io
+                       Report for http://localhost:5004/
+              Date of the scan : Sat, 24 May 2025 16:01:57 +0000
+                              Crawled pages : 14
+                          Scope of the scan : folder
+********************************************************************************
+
+Summary of vulnerabilities :
+----------------------------
+                                                              Backup file :   0
+                                                         Weak credentials :   0
+                                                           CRLF Injection :   0
+                                    Content Security Policy Configuration :   1
+                                               Cross Site Request Forgery :   0
+                                               Potentially dangerous file :   0
+                                                        Command execution :   0
+                                                           Path Traversal :   0
+                                    Fingerprint web application framework :   0
+                                                   Fingerprint web server :   0
+                                                          Htaccess Bypass :   0
+                                                           HTML Injection :   0
+                                                  Clickjacking Protection :   1
+                                    HTTP Strict Transport Security (HSTS) :   0
+                                                      MIME Type Confusion :   1
+                                                     HttpOnly Flag cookie :   0
+                                                     Unencrypted Channels :   0
+                                                           LDAP Injection :   0
+                                                                Log4Shell :   0
+                                                            Open Redirect :   0
+                                           Reflected Cross Site Scripting :   0
+                                                       Secure Flag cookie :   1
+                                                             Spring4Shell :   0
+                                                            SQL Injection :   2
+                                                TLS/SSL misconfigurations :   0
+                                              Server Side Request Forgery :   0
+                                                    Stored HTML Injection :   0
+                                              Stored Cross Site Scripting :   0
+                                                       Subdomain takeover :   0
+                                                      Blind SQL Injection :   0
+                                                 Unrestricted File Upload :   0
+                                                      Vulnerable software :   0
+********************************************************************************
+
+Content Security Policy Configuration
+-------------------------------------
+CSP is not set
+WSTG code: ['WSTG-CONF-12', 'OSHP-Content-Security-Policy']
+Evil request:
+    GET / HTTP/1.1
+    host: localhost:5004
+    connection: keep-alive
+    user-agent: Mozilla/5.0 (Windows NT 6.1; rv:45.0) Gecko/20100101 Firefox/45.0
+    accept-language: en-US
+    accept-encoding: gzip, deflate, br
+    accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8
+    cookie: session=.eJzljEEKwjAQRa8yzLoUUxWpW0FwJ-pOSpkkE1tsE8lERUrvrugF3Lhy9Rb__Tdg7TqShgWXxwEhvYCW_IkjZrjxN-paC1fh6KlnCBEuJHIP0eaw7ZiEIcUH0Ilan2M1Zj9pHBqG1X63hhTO7KEVaD_Vb3QBG8CHBD0l0_z3o8rQSHT1e8Yl6nk5UaxY64lb2IUmqwo9M2pqbGGMMtN54YrSzXB8Aqb-s3M.aDCo4A.OQrMlukOfFOOKlsfv47JM95R_B4
+cURL command PoC : "curl "http://localhost:5004/""
+
+                                  *   *   *
+
+********************************************************************************
+
+Clickjacking Protection
+-----------------------
+X-Frame-Options is not set
+WSTG code: ['OSHP-X-Frame-Options']
+Evil request:
+    GET / HTTP/1.1
+    host: localhost:5004
+    connection: keep-alive
+    user-agent: Mozilla/5.0 (Windows NT 6.1; rv:45.0) Gecko/20100101 Firefox/45.0
+    accept-language: en-US
+    accept-encoding: gzip, deflate, br
+    accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8
+    cookie: session=.eJzt1k9rwjAYgPGv8pKzSFsV0etA2G1suw2RNEltsaYjiZMhfvfJdtp5f4jbA4IH399zSEzISW2aXsfWRbV8OilJly9ltd-6oEbq1r_ovrNyiC54vXcyBHnWMR6HYMdy1zsdnaTwKnqrOz9W6_OIBg0aNGjQoEGDBg0aNGjQoEGDBg0aNH608dg6uXm4X0kads5LF6X7qDLOOOOMM84444wzzjjjjH_j-KpzvZX9ISap3eWTju6ipqK9lWomptVBm-RClH7w27_f-Lx8Uewgfkiy18m0CMR_F5zT6xO57BkNGjRo0KBBgzcSgrceZwCB4L7Ic3XyFLnsGQ0aNGjQoEGDNxKCtx5nAIHgvshzdfIUuewZDRo0aNCgQYM3EuJ333plUXz9z3eFkTx3CoFAIHK-OfOJ5LlTCAQCgUAgEAgEAoFAIBAIBAKBQCAQCAQCgUAgENcm1iNlYmg27z-rpapni6J0pavropnbea1tWdVTU06MrYwpzWRWNdWimarzGyyVeaY.aDCo5w.ZxqOHGLPhMDRAvit20AHlHzAJTA
+cURL command PoC : "curl "http://localhost:5004/""
+
+                                  *   *   *
+
+********************************************************************************
+
+MIME Type Confusion
+-------------------
+X-Content-Type-Options is not set
+WSTG code: ['OSHP-X-Content-Type-Options']
+Evil request:
+    GET / HTTP/1.1
+    host: localhost:5004
+    connection: keep-alive
+    user-agent: Mozilla/5.0 (Windows NT 6.1; rv:45.0) Gecko/20100101 Firefox/45.0
+    accept-language: en-US
+    accept-encoding: gzip, deflate, br
+    accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8
+    cookie: session=.eJzt1k9rwjAYgPGv8pKzSFsV0etA2G1suw2RNEltsaYjiZMhfvfJdtp5f4jbA4IH399zSEzISW2aXsfWRbV8OilJly9ltd-6oEbq1r_ovrNyiC54vXcyBHnWMR6HYMdy1zsdnaTwKnqrOz9W6_OIBg0aNGjQoEGDBg0aNGjQoEGDBg0aNH608dg6uXm4X0kads5LF6X7qDLOOOOMM84444wzzjjjjH_j-KpzvZX9ISap3eWTju6ipqK9lWomptVBm-RClH7w27_f-Lx8Uewgfkiy18m0CMR_F5zT6xO57BkNGjRo0KBBgzcSgrceZwCB4L7Ic3XyFLnsGQ0aNGjQoEGDNxKCtx5nAIHgvshzdfIUuewZDRo0aNCgQYM3EuJ333plUXz9z3eFkTx3CoFAIHK-OfOJ5LlTCAQCgUAgEAgEAoFAIBAIBAKBQCAQCAQCgUAgENcm1iNlYmg27z-rpapni6J0pavropnbea1tWdVTU06MrYwpzWRWNdWimarzGyyVeaY.aDCo5w.ZxqOHGLPhMDRAvit20AHlHzAJTA
+cURL command PoC : "curl "http://localhost:5004/""
+
+                                  *   *   *
+
+********************************************************************************
+
+Secure Flag cookie
+------------------
+Secure flag is not set in the cookie : session
+WSTG code: ['WSTG-SESS-02']
+Evil request:
+    GET / HTTP/1.1
+    host: localhost:5004
+    connection: keep-alive
+    user-agent: Mozilla/5.0 (Windows NT 6.1; rv:45.0) Gecko/20100101 Firefox/45.0
+    accept-language: en-US
+    accept-encoding: gzip, deflate, br
+    accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8
+cURL command PoC : "curl "http://localhost:5004/""
+
+                                  *   *   *
+
+********************************************************************************
+
+SQL Injection
+-------------
+SQL Injection via injection in the parameter username
+WSTG code: ['WSTG-INPV-05']
+Evil request:
+    POST /admin-login HTTP/1.1
+    host: localhost:5004
+    connection: keep-alive
+    user-agent: Mozilla/5.0 (Windows NT 6.1; rv:45.0) Gecko/20100101 Firefox/45.0
+    accept-language: en-US
+    accept-encoding: gzip, deflate, br
+    accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8
+    referer: http://localhost:5004/admin-login
+    cookie: session=.eJwNxUEKgzAQAMCvLHsWMVER_UFvvReRTbKx0jSRbNpSxL-3c5kDFx9I7iw43Q6E8g8dxZUzVniJbwqbg5dwjvRkSBl2Evmk7Gq4BiZhKPkLtNIWa5zPuUIr2S8lPTjihKYfG8WKjWn84AZDTmnTWdVap61Vtu2116Pv8PwBupgtXg.aDCo4Q.opw1Xv2_8WjG2BAt45ECZUJja78
+    content-length: 159
+    content-type: application/x-www-form-urlencoded
+    Content-Type: multipart/form-data; boundary=------------------------boundarystring
+
+    ------------------------boundarystring
+    Content-Disposition: form-data; name="csrf_token"
+
+    ImI1OTAxZTFlYmIwZjdkN2JhZDEyYjRjMTNjZDJjYzFjMzUyZjI5ZjQi.aDCo2Q.8HSMQoGqCTra44DncFBT6p0HtHc
+    ------------------------boundarystring
+    Content-Disposition: form-data; name="username"
+
+    alice AND 53=53 AND 10=10
+    ------------------------boundarystring
+    Content-Disposition: form-data; name="password"
+
+    Letm3in_
+    ------------------------boundarystring--
+cURL command PoC : "curl "http://localhost:5004/admin-login" -e "http://localhost:5004/admin-login" -F "csrf_token=ImI1OTAxZTFlYmIwZjdkN2JhZDEyYjRjMTNjZDJjYzFjMzUyZjI5ZjQi.aDCo2Q.8HSMQoGqCTra44DncFBT6p0HtHc" -F "username=alice AND 53=53 AND 10=10" -F "password=Letm3in_""
+
+                                  *   *   *
+
+SQL Injection via injection in the parameter username
+WSTG code: ['WSTG-INPV-05']
+Evil request:
+    POST /admin-register HTTP/1.1
+    host: localhost:5004
+    connection: keep-alive
+    user-agent: Mozilla/5.0 (Windows NT 6.1; rv:45.0) Gecko/20100101 Firefox/45.0
+    accept-language: en-US
+    accept-encoding: gzip, deflate, br
+    accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8
+    referer: http://localhost:5004/admin-register
+    cookie: session=eyJjc3JmX3Rva2VuIjoiYjU5MDFlMWViYjBmN2Q3YmFkMTJiNGMxM2NkMmNjMWMzNTJmMjlmNCJ9.aDCo4Q.P5_6O-55pt_sQx5Ar7bWPIdcA14
+    content-length: 210
+    content-type: application/x-www-form-urlencoded
+    Content-Type: multipart/form-data; boundary=------------------------boundarystring
+
+    ------------------------boundarystring
+    Content-Disposition: form-data; name="csrf_token"
+
+    ImI1OTAxZTFlYmIwZjdkN2JhZDEyYjRjMTNjZDJjYzFjMzUyZjI5ZjQi.aDCo2Q.8HSMQoGqCTra44DncFBT6p0HtHc
+    ------------------------boundarystring
+    Content-Disposition: form-data; name="username"
+
+    alice AND 59=59 AND 17=17
+    ------------------------boundarystring
+    Content-Disposition: form-data; name="email"
+
+    wapiti2021@mailinator.com
+    ------------------------boundarystring
+    Content-Disposition: form-data; name="password"
+
+    Letm3in_
+    ------------------------boundarystring
+    Content-Disposition: form-data; name="confirm"
+
+    Letm3in_
+    ------------------------boundarystring--
+cURL command PoC : "curl "http://localhost:5004/admin-register" -e "http://localhost:5004/admin-register" -F "csrf_token=ImI1OTAxZTFlYmIwZjdkN2JhZDEyYjRjMTNjZDJjYzFjMzUyZjI5ZjQi.aDCo2Q.8HSMQoGqCTra44DncFBT6p0HtHc" -F "username=alice AND 59=59 AND 17=17" -F "email=wapiti2021@mailinator.com" -F "password=Letm3in_" -F "confirm=Letm3in_""
+
+                                  *   *   *
+
+********************************************************************************
+
+Summary of anomalies :
+----------------------
+                                                    Internal Server Error :   0
+                                                     Resource consumption :   0
+********************************************************************************
+Summary of additionals :
+------------------------
+                       Review Webserver Metafiles for Information Leakage :   0
+                                               Fingerprint web technology :   0
+                                                             HTTP Methods :   0
+                                                TLS/SSL misconfigurations :   0
+********************************************************************************
