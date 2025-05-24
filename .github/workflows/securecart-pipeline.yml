@@ -105,11 +105,12 @@ jobs:
           echo "No vulnerabilities found" > safety_report.txt
         fi
         
-        # Pip-Audit SCA Scan - handle exit codes properly
+        # Pip-Audit SCA Scan - handle exit codes properly and ensure file output
         echo "=== RUNNING PIP-AUDIT SCAN ==="
         $HOME/.local/bin/pip-audit -r requirements.txt > pip_audit_report.txt || echo "Pip-audit completed (exit code indicates findings, not failure)"
-        if [ ! -f pip_audit_report.txt ]; then
-          echo "No vulnerabilities found" > pip_audit_report.txt
+        # Ensure file exists even when no vulnerabilities found
+        if [ ! -f pip_audit_report.txt ] || [ ! -s pip_audit_report.txt ]; then
+          echo "No known vulnerabilities found" > pip_audit_report.txt
         fi
         
         # Snyk Code SAST Scan - handle exit codes properly
@@ -353,6 +354,7 @@ jobs:
         path: |
           wapiti_report.txt
           zap_report.json
+          zap_report.txt
         key: dast-results-${{ hashFiles('**/*.py') }}-${{ github.sha }}
 
     - name: Run ZAP Scan
@@ -369,8 +371,22 @@ jobs:
         curl "http://localhost:8080/JSON/ascan/action/scan/?url=http://localhost:5000" || true
         sleep 20
         
-        # Get results
+        # Get results and save to file
         curl "http://localhost:8080/JSON/core/view/alerts/" > zap_report.json || true
+        
+        # Also save a human-readable version
+        echo "=== ZAP Security Scan Report ===" > zap_report.txt
+        echo "Scan Date: $(date)" >> zap_report.txt
+        echo "Target: http://localhost:5000" >> zap_report.txt
+        echo "" >> zap_report.txt
+        
+        # Parse JSON and create readable summary
+        if [ -f zap_report.json ] && [ -s zap_report.json ]; then
+          echo "Alerts Found:" >> zap_report.txt
+          cat zap_report.json | grep -o '"name":"[^"]*"' | sed 's/"name":"//g' | sed 's/"//g' >> zap_report.txt || echo "No alerts found" >> zap_report.txt
+        else
+          echo "No security issues detected or scan failed" >> zap_report.txt
+        fi
         
         # Stop ZAP
         curl "http://localhost:8080/JSON/core/action/shutdown/" || true
@@ -394,6 +410,7 @@ jobs:
         path: |
           wapiti_report.txt
           zap_report.json
+          zap_report.txt
 
   dast-security-gate:
     name: DAST Security Gate
@@ -411,9 +428,15 @@ jobs:
       run: |
         echo "Evaluating post-deployment security test results..."
         
-        # Check ZAP results - simple approach
+        # Check ZAP results - enhanced evaluation
         if [ -f zap_report.json ]; then
-          echo "ZAP scan completed - results available for review"
+          echo "ZAP scan completed - JSON results available for review"
+        fi
+        
+        if [ -f zap_report.txt ]; then
+          echo "ZAP scan completed - text summary available for review"
+          echo "ZAP Summary:"
+          cat zap_report.txt
         fi
         
         # Check Wapiti results - simple approach
