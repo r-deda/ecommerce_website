@@ -456,7 +456,15 @@ jobs:
       run: |
         echo "DAST results restored from cache"
 
-    # Fixed: Ensure ZAP scan results are properly uploaded to artifacts
+    - name: Debug Files Before Upload
+      run: |
+        echo "Current directory:"
+        pwd
+        echo "Files in current directory:"
+        ls -la
+        echo "Looking for ZAP files:"
+        find . -name "zap_report*" -o -name "wapiti_report*" 2>/dev/null || echo "No reports found"
+
     - name: Upload DAST Results
       uses: actions/upload-artifact@v4
       with:
