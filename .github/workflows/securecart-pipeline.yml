@@ -236,12 +236,12 @@ jobs:
           MEDIUM_ISSUES=$(jq '[.results[] | select(.issue_severity == "MEDIUM")] | length' bandit_report.json 2>/dev/null || echo "0")
           echo "High severity SAST issues found: $HIGH_ISSUES"
           echo "Medium severity SAST issues found: $MEDIUM_ISSUES"
-          # Fail on any high severity, or more than 2 medium severity issues
-          if [ "$HIGH_ISSUES" -gt 0 ] 2>/dev/null; then
+          # Fail on any high severity, or more than 1 medium severity issues
+          if [ "$HIGH_ISSUES" -gt 1 ] 2>/dev/null; then
             echo "SECURITY GATE FAILED: High severity issues found ($HIGH_ISSUES)"
             exit 1
           fi
-          if [ "$MEDIUM_ISSUES" -gt 0 ] 2>/dev/null; then
+          if [ "$MEDIUM_ISSUES" -gt 1 ] 2>/dev/null; then
             echo "SECURITY GATE FAILED: Too many medium severity issues ($MEDIUM_ISSUES)"
             exit 1
           fi
@@ -257,7 +257,7 @@ jobs:
             CRITICAL_VULNS=$(grep -c -E "vulnerability.*found|CVE-|GHSA-" safety_report.txt 2>/dev/null || echo "0")
           fi
           echo "Critical vulnerabilities found by Safety: $CRITICAL_VULNS"
-          if [ "$CRITICAL_VULNS" -gt  ] 2>/dev/null; then
+          if [ "$CRITICAL_VULNS" -gt 0 ] 2>/dev/null; then
             echo "SECURITY GATE FAILED: Too many critical vulnerabilities ($CRITICAL_VULNS)"
             exit 1
           fi
