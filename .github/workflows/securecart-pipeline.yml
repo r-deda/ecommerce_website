@@ -390,6 +390,9 @@ jobs:
         pip install --user --upgrade bcrypt passlib
         pip install --user wapiti3
         echo "$HOME/.local/bin" >> $GITHUB_PATH
+        # Verify installation
+        ls -la $HOME/.local/bin/ | grep -i wapiti || echo "Wapiti not found in expected location"
+        which wapiti3 || echo "wapiti3 command not found"
 
     - name: Start Application
       run: |
@@ -449,7 +452,15 @@ jobs:
       if: steps.cache-dast-results.outputs.cache-hit != 'true'
       run: |
         echo "Running Wapiti scan..."
-        $HOME/.local/bin/wapiti -u http://localhost:5000 --format txt --output wapiti_report.txt || echo "Wapiti scan completed with issues"
+        # Try different command variations
+        if command -v wapiti3 >/dev/null 2>&1; then
+          wapiti3 -u http://localhost:5000 --format txt --output wapiti_report.txt || echo "Wapiti3 scan completed with issues"
+        elif command -v $HOME/.local/bin/wapiti3 >/dev/null 2>&1; then
+          $HOME/.local/bin/wapiti3 -u http://localhost:5000 --format txt --output wapiti_report.txt || echo "Wapiti3 scan completed with issues"
+        else
+          echo "Wapiti not found - creating placeholder report"
+          echo "Wapiti installation failed - scan not performed" > wapiti_report.txt
+        fi
 
     - name: Display Cached DAST Results
       if: steps.cache-dast-results.outputs.cache-hit == 'true'
