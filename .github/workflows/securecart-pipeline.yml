@@ -456,8 +456,15 @@ jobs:
       if: steps.cache-dast-results.outputs.cache-hit != 'true'
       run: |
         echo "Running Wapiti scan..."
-        # Run Wapiti directly with Python module since bin doesn't exist
+        # Run Wapiti with explicit output filename
         python -m wapitiCore.main.wapiti -u http://localhost:5000 --format txt --output wapiti_report.txt || echo "Wapiti scan completed with issues"
+        
+        # If Wapiti created a different filename, copy it to the expected name
+        if [ ! -f wapiti_report.txt ] && [ -f localhost_5000_*.txt ]; then
+          echo "Copying Wapiti report to expected filename..."
+          cp localhost_5000_*.txt wapiti_report.txt
+          echo "Report copied successfully"
+        fi
 
     - name: Display Cached DAST Results
       if: steps.cache-dast-results.outputs.cache-hit == 'true'
