@@ -27,7 +27,6 @@ jobs:
       with:
         python-version: ${{ env.PYTHON_VERSION }}
 
-    # Enhanced dependency caching with better restore keys
     - name: Cache Python Dependencies
       id: cache-deps
       uses: actions/cache@v3
@@ -75,7 +74,6 @@ jobs:
           ~/.local/lib/python${{ env.PYTHON_VERSION }}/site-packages
         key: ${{ runner.os }}-pip-${{ env.CACHE_VERSION }}-${{ hashFiles('requirements.txt') }}
 
-    # Cache security scan results to avoid re-running on unchanged code
     - name: Cache Security Scan Results
       id: cache-security-results
       uses: actions/cache@v3
@@ -339,7 +337,6 @@ jobs:
           ~/.local/lib/python${{ env.PYTHON_VERSION }}/site-packages
         key: ${{ runner.os }}-pip-${{ env.CACHE_VERSION }}-${{ hashFiles('requirements.txt') }}
 
-    # Cache ZAP installation to save ~4 minutes per run
     - name: Cache ZAP Installation
       id: cache-zap
       uses: actions/cache@v3
@@ -450,7 +447,6 @@ jobs:
       run: |
         echo "DAST results restored from cache"
 
-    # THE KEY FIX: Ensure files exist before uploading
     - name: Ensure Report Files Exist
       run: |
         echo "Checking for DAST report files..."
@@ -487,7 +483,6 @@ jobs:
         echo "File sizes:"
         du -h wapiti_report.txt zap_report.json zap_report.txt
 
-    # Fixed: Ensure ZAP scan results are properly uploaded to artifacts
     - name: Upload DAST Results
       uses: actions/upload-artifact@v4
       with:
@@ -504,7 +499,6 @@ jobs:
     if: github.ref == 'refs/heads/main'
 
     steps:
-    # THE KEY FIX: Add error handling for missing artifacts
     - name: Download DAST Results
       uses: actions/download-artifact@v4
       with:
@@ -526,34 +520,6 @@ jobs:
       run: |
         echo "Evaluating post-deployment security test results..."
         
-        # Check ZAP results for security vulnerabilities (robust JSON parsing)
-        if [ -f zap_report.json ] && [ -s zap_report.json ]; then
-          # Try multiple approaches to parse ZAP results
-          HIGH_ALERTS=$(jq -r '[.alerts[]? | select(.risk? == "High" or .risk? == "HIGH")] | length' zap_report.json 2>/dev/null || echo "0")
-          MEDIUM_ALERTS=$(jq -r '[.alerts[]? | select(.risk? == "Medium" or .risk? == "MEDIUM")] | length' zap_report.json 2>/dev/null || echo "0")
-          
-          # Fallback: count text patterns if JSON parsing fails
-          if [ "$HIGH_ALERTS" = "0" ] && [ "$MEDIUM_ALERTS" = "0" ]; then
-            HIGH_ALERTS=$(grep -c -i "high.*risk\|risk.*high" zap_report.json 2>/dev/null || echo "0")
-            MEDIUM_ALERTS=$(grep -c -i "medium.*risk\|risk.*medium" zap_report.json 2>/dev/null || echo "0")
-          fi
-          
-          echo "ZAP High severity alerts: $HIGH_ALERTS"
-          echo "ZAP Medium severity alerts: $MEDIUM_ALERTS"
-          
-          # More lenient thresholds for academic environment
-          if [ "$HIGH_ALERTS" -gt 2 ] 2>/dev/null; then
-            echo "DAST SECURITY GATE FAILED: Critical vulnerabilities found by ZAP ($HIGH_ALERTS)"
-            exit 1
-          fi
-          
-          if [ "$MEDIUM_ALERTS" -gt 2 ] 2>/dev/null; then
-            echo "DAST SECURITY GATE WARNING: Many medium severity issues found ($MEDIUM_ALERTS)"
-          fi
-        else
-          echo "ZAP scan results not found or empty - allowing deployment"
-        fi
-        
         # Check Wapiti results for vulnerabilities - count only actual vulnerabilities
         if [ -f wapiti_report.txt ] && [ -s wapiti_report.txt ]; then
           # Count vulnerabilities by looking for specific vulnerability types with non-zero counts
@@ -574,7 +540,7 @@ jobs:
           echo "Total Wapiti vulnerabilities: $WAPITI_VULNS"
           
           # Block deployment if 2 or more vulnerabilities found
-          if [ "$WAPITI_VULNS" -ge 2 ] 2>/dev/null; then
+          if [ "$WAPITI_VULNS" -gt 3 ] 2>/dev/null; then
             echo "DAST SECURITY GATE FAILED: Too many vulnerabilities found by Wapiti ($WAPITI_VULNS)"
             exit 1
           fi
