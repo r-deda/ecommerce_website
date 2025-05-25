@@ -469,19 +469,14 @@ jobs:
       if: steps.cache-dast-results.outputs.cache-hit != 'true'
       run: |
         echo "Running Wapiti scan..."
-        # Run Wapiti scan
-        python -m wapitiCore.main.wapiti -u http://localhost:5000 --format txt --output wapiti_report.txt || echo "Wapiti scan completed with issues"
+        # Run Wapiti scan and capture output directly
+        python -m wapitiCore.main.wapiti -u http://localhost:5000 --format txt > wapiti_report.txt 2>&1 || echo "Wapiti scan completed with issues"
         
-        # Check if Wapiti created a different filename and copy it
-        echo "Checking for Wapiti output files..."
-        ls -la localhost_* || echo "No localhost files found"
-        
-        if [ -f localhost_5000_*.txt ]; then
-          echo "Found Wapiti report with auto-generated name, copying to wapiti_report.txt"
-          cp localhost_5000_*.txt wapiti_report.txt
-          echo "Report copied successfully"
-        elif [ ! -f wapiti_report.txt ]; then
-          echo "No Wapiti report found, creating placeholder"
+        # Verify the report was created
+        if [ -f wapiti_report.txt ] && [ -s wapiti_report.txt ]; then
+          echo "Wapiti report created successfully ($(wc -l < wapiti_report.txt) lines)"
+        else
+          echo "Wapiti scan failed, creating fallback report"
           echo "Wapiti scan did not generate a report" > wapiti_report.txt
         fi
 
@@ -614,7 +609,7 @@ jobs:
           echo "Total Wapiti vulnerabilities: $WAPITI_VULNS"
           
           # Block deployment if 2 or more vulnerabilities found
-          if [ "$WAPITI_VULNS" -gt 3 ] 2>/dev/null; then
+          if [ "$WAPITI_VULNS" -ge 2 ] 2>/dev/null; then
             echo "DAST SECURITY GATE FAILED: Too many vulnerabilities found by Wapiti ($WAPITI_VULNS)"
             exit 1
           fi
