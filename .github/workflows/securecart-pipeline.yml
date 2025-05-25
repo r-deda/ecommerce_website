@@ -212,7 +212,7 @@ jobs:
   security-gate:
     name: Security Gate Check
     runs-on: ubuntu-latest
-    needs: build-application
+    needs: [build-application, code-quality]
 
     steps:
     - name: Download Security Reports
@@ -520,6 +520,34 @@ jobs:
       run: |
         echo "Evaluating post-deployment security test results..."
         
+        # Check ZAP results for security vulnerabilities (robust JSON parsing)
+        if [ -f zap_report.json ] && [ -s zap_report.json ]; then
+          # Try multiple approaches to parse ZAP results
+          HIGH_ALERTS=$(jq -r '[.alerts[]? | select(.risk? == "High" or .risk? == "HIGH")] | length' zap_report.json 2>/dev/null || echo "0")
+          MEDIUM_ALERTS=$(jq -r '[.alerts[]? | select(.risk? == "Medium" or .risk? == "MEDIUM")] | length' zap_report.json 2>/dev/null || echo "0")
+          
+          # Fallback: count text patterns if JSON parsing fails
+          if [ "$HIGH_ALERTS" = "0" ] && [ "$MEDIUM_ALERTS" = "0" ]; then
+            HIGH_ALERTS=$(grep -c -i "high.*risk\|risk.*high" zap_report.json 2>/dev/null || echo "0")
+            MEDIUM_ALERTS=$(grep -c -i "medium.*risk\|risk.*medium" zap_report.json 2>/dev/null || echo "0")
+          fi
+          
+          echo "ZAP High severity alerts: $HIGH_ALERTS"
+          echo "ZAP Medium severity alerts: $MEDIUM_ALERTS"
+          
+          # More lenient thresholds for academic environment
+          if [ "$HIGH_ALERTS" -gt 2 ] 2>/dev/null; then
+            echo "DAST SECURITY GATE FAILED: Critical vulnerabilities found by ZAP ($HIGH_ALERTS)"
+            exit 1
+          fi
+          
+          if [ "$MEDIUM_ALERTS" -gt 2 ] 2>/dev/null; then
+            echo "DAST SECURITY GATE WARNING: Many medium severity issues found ($MEDIUM_ALERTS)"
+          fi
+        else
+          echo "ZAP scan results not found or empty - allowing deployment"
+        fi
+        
         # Check Wapiti results for vulnerabilities - count only actual vulnerabilities
         if [ -f wapiti_report.txt ] && [ -s wapiti_report.txt ]; then
           # Count vulnerabilities by looking for specific vulnerability types with non-zero counts
@@ -540,7 +568,7 @@ jobs:
           echo "Total Wapiti vulnerabilities: $WAPITI_VULNS"
           
           # Block deployment if 2 or more vulnerabilities found
-          if [ "$WAPITI_VULNS" -gt 3 ] 2>/dev/null; then
+          if [ "$WAPITI_VULNS" -ge 2 ] 2>/dev/null; then
             echo "DAST SECURITY GATE FAILED: Too many vulnerabilities found by Wapiti ($WAPITI_VULNS)"
             exit 1
           fi
