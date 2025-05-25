@@ -313,12 +313,18 @@ jobs:
           zap_report.json
           zap_report.html
           wapiti_report.txt
+        if-no-files-found: warn
+
+    - name: Verify Upload Success
+      run: |
+        echo "Checking if DAST reports were created..."
+        ls -la zap_report* wapiti_report* || echo "Some reports missing"
 
   dast-security-gate:
     name: DAST Security Gate
     runs-on: ubuntu-latest
     needs: deploy-and-dast
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && needs.deploy-and-dast.result == 'success'
     steps:
     - name: Download DAST Reports
       uses: actions/download-artifact@v4
@@ -365,14 +371,15 @@ jobs:
   security-summary:
     name: Security Summary Report
     runs-on: ubuntu-latest
-    needs: [security-analysis, deploy-and-dast, dast-security-gate]
-    if: always()
+    needs: [security-analysis, deploy-and-dast]
+    if: always() && needs.security-analysis.result != 'cancelled'
     steps:
     - name: Download All Security Reports
       uses: actions/download-artifact@v4
       with:
         pattern: '*-reports'
         merge-multiple: true
+        continue-on-error: true
 
     - name: Install jq for JSON Processing
       run: sudo apt-get update && sudo apt-get install -y jq
