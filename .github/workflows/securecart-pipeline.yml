@@ -259,6 +259,34 @@ jobs:
           fi
         fi
         
+        # Check Snyk Code results for code issues (multiple patterns for robustness)
+        if [ -f snyk_code_report.txt ] && [ -s snyk_code_report.txt ]; then
+          SNYK_CODE_ISSUES=$(grep -c -E "✗|High:|Medium:|issues found|vulnerabilities found" snyk_code_report.txt 2>/dev/null || echo "0")
+          # Also check if Snyk explicitly says "no issues"
+          if grep -q "no issues\|no vulnerabilities\|no problems" snyk_code_report.txt 2>/dev/null; then
+            SNYK_CODE_ISSUES=0
+          fi
+          echo "Code issues found by Snyk Code: $SNYK_CODE_ISSUES"
+          if [ "$SNYK_CODE_ISSUES" -gt 5 ]; then
+            echo "SECURITY GATE FAILED: Too many Snyk Code issues ($SNYK_CODE_ISSUES)"
+            exit 1
+          fi
+        fi
+        
+        # Check Snyk Test results for dependency vulnerabilities (multiple patterns)
+        if [ -f snyk_test_report.txt ] && [ -s snyk_test_report.txt ]; then
+          SNYK_TEST_VULNS=$(grep -c -E "✗|vulnerability|High:|Medium:|issues found" snyk_test_report.txt 2>/dev/null || echo "0")
+          # Check if Snyk says no vulnerabilities found
+          if grep -q "no vulnerable\|no issues\|no known vulnerabilities" snyk_test_report.txt 2>/dev/null; then
+            SNYK_TEST_VULNS=0
+          fi
+          echo "Dependency vulnerabilities found by Snyk Test: $SNYK_TEST_VULNS"
+          if [ "$SNYK_TEST_VULNS" -gt 8 ]; then
+            echo "SECURITY GATE FAILED: Too many Snyk dependency vulnerabilities ($SNYK_TEST_VULNS)"
+            exit 1
+          fi
+        fi
+        
         echo "SECURITY GATE PASSED: Deployment approved"
 
   deploy-staging:
@@ -440,20 +468,47 @@ jobs:
       run: |
         echo "Evaluating post-deployment security test results..."
         
-        # Check ZAP results - enhanced evaluation
-        if [ -f zap_report.json ]; then
-          echo "ZAP scan completed - JSON results available for review"
+        # Check ZAP results for security vulnerabilities (robust JSON parsing)
+        if [ -f zap_report.json ] && [ -s zap_report.json ]; then
+          # Try multiple approaches to parse ZAP results
+          HIGH_ALERTS=$(jq -r '[.alerts[]? | select(.risk? == "High" or .risk? == "HIGH")] | length' zap_report.json 2>/dev/null || echo "0")
+          MEDIUM_ALERTS=$(jq -r '[.alerts[]? | select(.risk? == "Medium" or .risk? == "MEDIUM")] | length' zap_report.json 2>/dev/null || echo "0")
+          
+          # Fallback: count text patterns if JSON parsing fails
+          if [ "$HIGH_ALERTS" = "0" ] && [ "$MEDIUM_ALERTS" = "0" ]; then
+            HIGH_ALERTS=$(grep -c -i "high.*risk\|risk.*high" zap_report.json 2>/dev/null || echo "0")
+            MEDIUM_ALERTS=$(grep -c -i "medium.*risk\|risk.*medium" zap_report.json 2>/dev/null || echo "0")
+          fi
+          
+          echo "ZAP High severity alerts: $HIGH_ALERTS"
+          echo "ZAP Medium severity alerts: $MEDIUM_ALERTS"
+          
+          # More lenient thresholds for academic environment
+          if [ "$HIGH_ALERTS" -gt 1 ]; then
+            echo "DAST SECURITY GATE FAILED: Critical vulnerabilities found by ZAP ($HIGH_ALERTS)"
+            exit 1
+          fi
+          
+          if [ "$MEDIUM_ALERTS" -gt 10 ]; then
+            echo "DAST SECURITY GATE WARNING: Many medium severity issues found ($MEDIUM_ALERTS)"
+          fi
+        else
+          echo "ZAP scan results not found or empty - allowing deployment"
         fi
         
-        if [ -f zap_report.txt ]; then
-          echo "ZAP scan completed - text summary available for review"
-          echo "ZAP Summary:"
-          cat zap_report.txt
-        fi
-        
-        # Check Wapiti results - simple approach
-        if [ -f wapiti_report.txt ]; then
-          echo "Wapiti scan completed - results available for review"
+        # Check Wapiti results for vulnerabilities (more specific patterns)
+        if [ -f wapiti_report.txt ] && [ -s wapiti_report.txt ]; then
+          # Count only actual vulnerability findings, not mentions
+          WAPITI_VULNS=$(grep -c -E "^\[.*\].*vulnerability|^\[.*\].*SQL.*injection|^\[.*\].*XSS|^\[.*\].*executed" wapiti_report.txt 2>/dev/null || echo "0")
+          echo "Wapiti vulnerabilities found: $WAPITI_VULNS"
+          
+          # Lenient threshold for academic environment  
+          if [ "$WAPITI_VULNS" -gt 5 ]; then
+            echo "DAST SECURITY GATE FAILED: Too many vulnerabilities found by Wapiti ($WAPITI_VULNS)"
+            exit 1
+          fi
+        else
+          echo "Wapiti scan results not found or empty - allowing deployment"
         fi
         
         echo "DAST SECURITY GATE PASSED: Security testing completed"
