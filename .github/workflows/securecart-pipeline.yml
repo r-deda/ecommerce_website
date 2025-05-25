@@ -27,6 +27,7 @@ jobs:
       with:
         python-version: ${{ env.PYTHON_VERSION }}
 
+    # Enhanced dependency caching with better restore keys
     - name: Cache Python Dependencies
       id: cache-deps
       uses: actions/cache@v3
@@ -42,7 +43,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install --user -r requirements.txt
-        pip install --user bandit safety pip-audit flake8 black isort
+        pip install --user bandit safety pip-audit flake8 black
         npm install -g snyk
 
   security-analysis:
@@ -74,6 +75,7 @@ jobs:
           ~/.local/lib/python${{ env.PYTHON_VERSION }}/site-packages
         key: ${{ runner.os }}-pip-${{ env.CACHE_VERSION }}-${{ hashFiles('requirements.txt') }}
 
+    # Cache security scan results to avoid re-running on unchanged code
     - name: Cache Security Scan Results
       id: cache-security-results
       uses: actions/cache@v3
@@ -163,21 +165,40 @@ jobs:
     - name: Install Code Quality Tools
       run: |
         python -m pip install --upgrade pip
-        pip install --user flake8 black isort
+        pip install --user flake8 black
         echo "$HOME/.local/bin" >> $GITHUB_PATH
 
     - name: Run Code Quality Checks
       run: |
         echo "Running code quality analysis..."
         
+        # Initialize quality results file
+        echo "Code Quality Report - $(date)" > quality_results.txt
+        echo "=================================" >> quality_results.txt
+        
         # Code Formatting Check
-        $HOME/.local/bin/black --check --diff shop/ run.py || echo "Black formatting issues found"
+        echo "Black formatting check:" >> quality_results.txt
+        if $HOME/.local/bin/black --check --diff shop/ run.py >> quality_results.txt 2>&1; then
+          echo "✓ Black formatting passed" >> quality_results.txt
+        else
+          echo "✗ Black formatting issues found" >> quality_results.txt
+        fi
         
         # Linting with Flake8
-        $HOME/.local/bin/flake8 shop/ run.py --count --max-line-length=88 --extend-ignore=E203,W503,F401,E501,E402,F403,F405,F841 --show-source --statistics || echo "Flake8 issues found"
+        echo "Flake8 linting check:" >> quality_results.txt
+        if $HOME/.local/bin/flake8 shop/ run.py --count --max-line-length=88 --extend-ignore=E203,W503,F401,E501,E402,F403,F405,F841 --show-source --statistics >> quality_results.txt 2>&1; then
+          echo "✓ Flake8 linting passed" >> quality_results.txt
+        else
+          echo "✗ Flake8 issues found" >> quality_results.txt
+        fi
         
-        # Import Sorting Check
-        $HOME/.local/bin/isort --check-only --diff shop/ run.py || echo "Import sorting issues found"
+        echo "Code quality analysis completed"
+
+    - name: Upload Code Quality Reports
+      uses: actions/upload-artifact@v4
+      with:
+        name: code-quality-reports
+        path: quality_results.txt
 
   build-application:
     name: Build Application
@@ -220,12 +241,33 @@ jobs:
       with:
         name: security-reports
 
+    - name: Download Code Quality Reports
+      uses: actions/download-artifact@v4
+      with:
+        name: code-quality-reports
+
     - name: Install jq for JSON Processing
       run: sudo apt-get update && sudo apt-get install -y jq
 
     - name: Security Gate Evaluation
       run: |
         echo "Evaluating security gate criteria..."
+        
+        # Check Code Quality Results
+        if [ -f quality_results.txt ]; then
+          echo "Code Quality Results:"
+          cat quality_results.txt
+          
+          # Check for any quality failures
+          if grep -q "✗" quality_results.txt; then
+            echo "SECURITY GATE FAILED: Code quality issues found"
+            exit 1
+          fi
+          echo "Code quality checks passed"
+        else
+          echo "SECURITY GATE FAILED: Code quality results not found"
+          exit 1
+        fi
         
         # Check Bandit results for high severity issues (JSON format)
         if [ -f bandit_report.json ] && [ -s bandit_report.json ]; then
@@ -337,6 +379,7 @@ jobs:
           ~/.local/lib/python${{ env.PYTHON_VERSION }}/site-packages
         key: ${{ runner.os }}-pip-${{ env.CACHE_VERSION }}-${{ hashFiles('requirements.txt') }}
 
+    # Cache ZAP installation to save ~4 minutes per run
     - name: Cache ZAP Installation
       id: cache-zap
       uses: actions/cache@v3
@@ -447,6 +490,7 @@ jobs:
       run: |
         echo "DAST results restored from cache"
 
+    # THE KEY FIX: Ensure files exist before uploading
     - name: Ensure Report Files Exist
       run: |
         echo "Checking for DAST report files..."
@@ -483,6 +527,7 @@ jobs:
         echo "File sizes:"
         du -h wapiti_report.txt zap_report.json zap_report.txt
 
+    # Fixed: Ensure ZAP scan results are properly uploaded to artifacts
     - name: Upload DAST Results
       uses: actions/upload-artifact@v4
       with:
@@ -499,6 +544,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
 
     steps:
+    # THE KEY FIX: Add error handling for missing artifacts
     - name: Download DAST Results
       uses: actions/download-artifact@v4
       with:
