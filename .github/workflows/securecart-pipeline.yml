@@ -554,11 +554,24 @@ jobs:
           echo "ZAP scan results not found or empty - allowing deployment"
         fi
         
-        # Check Wapiti results for vulnerabilities - count total vulnerabilities
+        # Check Wapiti results for vulnerabilities - count only actual vulnerabilities
         if [ -f wapiti_report.txt ] && [ -s wapiti_report.txt ]; then
-          # Count all vulnerabilities from the summary (anything with : 1 or higher)
-          WAPITI_VULNS=$(grep -E ":\s*[1-9][0-9]*$" wapiti_report.txt | wc -l 2>/dev/null || echo "0")
-          echo "Total vulnerabilities found by Wapiti: $WAPITI_VULNS"
+          # Count vulnerabilities by looking for specific vulnerability types with non-zero counts
+          WAPITI_VULNS=0
+          
+          # Add up individual vulnerability counts from the summary
+          CSP_VULNS=$(grep -E "Content Security Policy.*:\s*[1-9]" wapiti_report.txt | grep -o "[0-9]\+$" || echo "0")
+          CLICK_VULNS=$(grep -E "Clickjacking.*:\s*[1-9]" wapiti_report.txt | grep -o "[0-9]\+$" || echo "0")
+          MIME_VULNS=$(grep -E "MIME.*:\s*[1-9]" wapiti_report.txt | grep -o "[0-9]\+$" || echo "0")
+          XSS_VULNS=$(grep -E "Cross Site Scripting.*:\s*[1-9]" wapiti_report.txt | grep -o "[0-9]\+$" || echo "0")
+          SQL_VULNS=$(grep -E "SQL Injection.*:\s*[1-9]" wapiti_report.txt | grep -o "[0-9]\+$" || echo "0")
+          CMD_VULNS=$(grep -E "Command execution.*:\s*[1-9]" wapiti_report.txt | grep -o "[0-9]\+$" || echo "0")
+          
+          # Sum them up (using arithmetic expansion with defaults)
+          WAPITI_VULNS=$((${CSP_VULNS:-0} + ${CLICK_VULNS:-0} + ${MIME_VULNS:-0} + ${XSS_VULNS:-0} + ${SQL_VULNS:-0} + ${CMD_VULNS:-0}))
+          
+          echo "Vulnerabilities found by Wapiti: CSP:${CSP_VULNS:-0}, Clickjacking:${CLICK_VULNS:-0}, MIME:${MIME_VULNS:-0}, XSS:${XSS_VULNS:-0}, SQL:${SQL_VULNS:-0}, CMD:${CMD_VULNS:-0}"
+          echo "Total Wapiti vulnerabilities: $WAPITI_VULNS"
           
           # Block deployment if 2 or more vulnerabilities found
           if [ "$WAPITI_VULNS" -ge 2 ] 2>/dev/null; then
