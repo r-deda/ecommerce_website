@@ -454,8 +454,10 @@ jobs:
       if: steps.cache-dast-results.outputs.cache-hit != 'true'
       run: |
         echo "Running Wapiti scan..."
-        # Run Wapiti directly with Python module since bin doesn't exist
-        python -m wapitiCore.main.wapiti -u http://localhost:5000 --format txt --output wapiti_report.txt || echo "Wapiti scan completed with issues"
+        
+        # Checking that wapiti3 is installed
+        pip install wapiti3
+        wapiti -u http://localhost:5000 --format txt --output wapiti_report.txt || echo "Wapiti scan completed with issues"
 
     - name: Display Cached DAST Results
       if: steps.cache-dast-results.outputs.cache-hit == 'true'
