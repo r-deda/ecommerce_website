@@ -27,7 +27,6 @@ jobs:
       with:
         python-version: ${{ env.PYTHON_VERSION }}
 
-    # Enhanced dependency caching with better restore keys
     - name: Cache Python Dependencies
       id: cache-deps
       uses: actions/cache@v3
@@ -75,7 +74,6 @@ jobs:
           ~/.local/lib/python${{ env.PYTHON_VERSION }}/site-packages
         key: ${{ runner.os }}-pip-${{ env.CACHE_VERSION }}-${{ hashFiles('requirements.txt') }}
 
-    # Cache security scan results to avoid re-running on unchanged code
     - name: Cache Security Scan Results
       id: cache-security-results
       uses: actions/cache@v3
@@ -93,37 +91,36 @@ jobs:
       run: |
         echo "Running security analysis..."
         
-        # Bandit SAST Scan - handle exit codes properly
+        # Bandit SAST Scan
         echo "=== RUNNING BANDIT STATIC ANALYSIS ==="
         $HOME/.local/bin/bandit -r run.py shop/ -f json -o bandit_report.json || echo "Bandit completed (exit code indicates findings, not failure)"
         if [ ! -f bandit_report.json ]; then
           echo '{"results":[]}' > bandit_report.json
         fi
         
-        # Safety SCA Scan - handle exit codes properly
+        # Safety SCA Scan
         echo "=== RUNNING SAFETY DEPENDENCY SCAN ==="
         $HOME/.local/bin/safety check -r requirements.txt > safety_report.txt || echo "Safety completed (exit code indicates findings, not failure)"
         if [ ! -f safety_report.txt ]; then
           echo "No vulnerabilities found" > safety_report.txt
         fi
         
-        # Pip-Audit SCA Scan - handle exit codes properly and ensure file output
+        # Pip-Audit SCA Scan
         echo "=== RUNNING PIP-AUDIT SCAN ==="
         $HOME/.local/bin/pip-audit -r requirements.txt > pip_audit_report.txt || echo "Pip-audit completed (exit code indicates findings, not failure)"
-        # Ensure file exists even when no vulnerabilities found
         if [ ! -f pip_audit_report.txt ] || [ ! -s pip_audit_report.txt ]; then
           echo "No known vulnerabilities found" > pip_audit_report.txt
         fi
         
-        # Snyk Code SAST Scan - handle exit codes properly
+        # Snyk Code SAST Scan
         echo "=== RUNNING SNYK SAST ANALYSIS ==="
-        snyk auth 7763ec57-5521-456c-9b43-7a2e1deeb046 || echo "Snyk auth failed"
+        snyk auth ${{ secrets.SNYK_TOKEN || '7763ec57-5521-456c-9b43-7a2e1deeb046' }} || echo "Snyk auth failed"
         snyk code test shop/ run.py > snyk_code_report.txt || echo "Snyk Code completed (exit code indicates findings, not failure)"
         if [ ! -f snyk_code_report.txt ]; then
           echo "No code issues found" > snyk_code_report.txt
         fi
         
-        # Snyk Dependency SCA Scan - scan root directory
+        # Snyk Dependency SCA Scan
         echo "=== RUNNING SNYK DEPENDENCY SCAN ==="
         snyk test . > snyk_test_report.txt || echo "Snyk dependency scan completed (exit code indicates findings, not failure)"
         if [ ! -f snyk_test_report.txt ]; then
@@ -229,14 +226,12 @@ jobs:
       run: |
         echo "Evaluating security gate criteria..."
         
-        # Check Bandit results for high severity issues (improved JSON parsing)
+        # Check Bandit results for high severity issues
         if [ -f bandit_report.json ] && [ -s bandit_report.json ]; then
-          # Check for both HIGH and MEDIUM severity since your report shows medium issues
           HIGH_ISSUES=$(jq '[.results[] | select(.issue_severity == "HIGH")] | length' bandit_report.json 2>/dev/null || echo "0")
           MEDIUM_ISSUES=$(jq '[.results[] | select(.issue_severity == "MEDIUM")] | length' bandit_report.json 2>/dev/null || echo "0")
           echo "High severity SAST issues found: $HIGH_ISSUES"
           echo "Medium severity SAST issues found: $MEDIUM_ISSUES"
-          # Fail on any high severity, or more than 2 medium severity issues
           if [ "$HIGH_ISSUES" -gt 2 ] 2>/dev/null; then
             echo "SECURITY GATE FAILED: High severity issues found ($HIGH_ISSUES)"
             exit 1
@@ -247,13 +242,11 @@ jobs:
           fi
         fi
         
-        # Check Safety results for critical vulnerabilities (improved parsing)
+        # Check Safety results for critical vulnerabilities
         if [ -f safety_report.txt ] && [ -s safety_report.txt ]; then
-          # Look for actual vulnerability reports, not deprecation warnings
           if grep -q "No known security vulnerabilities reported\|0 vulnerabilities reported" safety_report.txt 2>/dev/null; then
             CRITICAL_VULNS=0
           else
-            # Count actual vulnerability lines (avoid DEPRECATED warnings)
             CRITICAL_VULNS=$(grep -c -E "vulnerability.*found|CVE-|GHSA-" safety_report.txt 2>/dev/null || echo "0")
           fi
           echo "Critical vulnerabilities found by Safety: $CRITICAL_VULNS"
@@ -263,7 +256,7 @@ jobs:
           fi
         fi
         
-        # Check pip-audit results for vulnerabilities (text format)
+        # Check pip-audit results for vulnerabilities
         if [ -f pip_audit_report.txt ] && [ -s pip_audit_report.txt ]; then
           PIP_AUDIT_VULNS=$(grep -c "vulnerability\|vulnerable" pip_audit_report.txt 2>/dev/null || echo "0")
           echo "Vulnerabilities found by pip-audit: $PIP_AUDIT_VULNS"
@@ -273,10 +266,9 @@ jobs:
           fi
         fi
         
-        # Check Snyk Code results for code issues (multiple patterns for robustness)
+        # Check Snyk Code results for code issues
         if [ -f snyk_code_report.txt ] && [ -s snyk_code_report.txt ]; then
           SNYK_CODE_ISSUES=$(grep -c -E "✗|High:|Medium:|issues found|vulnerabilities found" snyk_code_report.txt 2>/dev/null || echo "0")
-          # Also check if Snyk explicitly says "no issues"
           if grep -q "no issues\|no vulnerabilities\|no problems\|No issues were found" snyk_code_report.txt 2>/dev/null; then
             SNYK_CODE_ISSUES=0
           fi
@@ -287,10 +279,9 @@ jobs:
           fi
         fi
         
-        # Check Snyk Test results for dependency vulnerabilities (multiple patterns)
+        # Check Snyk Test results for dependency vulnerabilities
         if [ -f snyk_test_report.txt ] && [ -s snyk_test_report.txt ]; then
           SNYK_TEST_VULNS=$(grep -c -E "✗|vulnerability|High:|Medium:|issues found" snyk_test_report.txt 2>/dev/null || echo "0")
-          # Check if Snyk says no vulnerabilities found
           if grep -q "no vulnerable\|no issues\|no known vulnerabilities\|no vulnerable paths found" snyk_test_report.txt 2>/dev/null; then
             SNYK_TEST_VULNS=0
           fi
@@ -366,7 +357,6 @@ jobs:
           ~/.local/lib/python${{ env.PYTHON_VERSION }}/site-packages
         key: ${{ runner.os }}-pip-${{ env.CACHE_VERSION }}-${{ hashFiles('requirements.txt') }}
 
-    # Cache ZAP installation to save ~4 minutes per run
     - name: Cache ZAP Installation
       id: cache-zap
       uses: actions/cache@v3
@@ -397,8 +387,16 @@ jobs:
         export DATABASE_URL="sqlite:///instance/securecart.db"
         mkdir -p instance
         python run.py &
-        sleep 20
-        echo "Application started for DAST testing"
+        
+        # Wait for application to start with health check
+        for i in {1..30}; do
+          if curl -f http://localhost:5000 2>/dev/null; then
+            echo "Application is ready"
+            break
+          fi
+          echo "Waiting for application to start... ($i/30)"
+          sleep 2
+        done
 
     - name: Cache DAST Results
       id: cache-dast-results
@@ -427,7 +425,7 @@ jobs:
         # Get results and save to file
         curl "http://localhost:8080/JSON/core/view/alerts/" > zap_report.json || true
         
-        # Also save a human-readable version
+        # Create readable version
         echo "=== ZAP Security Scan Report ===" > zap_report.txt
         echo "Scan Date: $(date)" >> zap_report.txt
         echo "Target: http://localhost:5000" >> zap_report.txt
@@ -456,15 +454,6 @@ jobs:
       run: |
         echo "DAST results restored from cache"
 
-    - name: Debug Files Before Upload
-      run: |
-        echo "Current directory:"
-        pwd
-        echo "Files in current directory:"
-        ls -la
-        echo "Looking for ZAP files:"
-        find . -name "zap_report*" -o -name "wapiti_report*" 2>/dev/null || echo "No reports found"
-
     - name: Upload DAST Results
       uses: actions/upload-artifact@v4
       with:
@@ -486,55 +475,53 @@ jobs:
       with:
         name: dast-results
 
+    - name: Install jq for JSON Processing
+      run: sudo apt-get update && sudo apt-get install -y jq
+
     - name: Evaluate DAST Results
       run: |
         echo "Evaluating post-deployment security test results..."
-        
-        # Check ZAP results for security vulnerabilities (robust JSON parsing)
+
+        # Check ZAP results for security vulnerabilities
         if [ -f zap_report.json ] && [ -s zap_report.json ]; then
-          # Try multiple approaches to parse ZAP results
           HIGH_ALERTS=$(jq -r '[.alerts[]? | select(.risk? == "High" or .risk? == "HIGH")] | length' zap_report.json 2>/dev/null || echo "0")
           MEDIUM_ALERTS=$(jq -r '[.alerts[]? | select(.risk? == "Medium" or .risk? == "MEDIUM")] | length' zap_report.json 2>/dev/null || echo "0")
-          
+
           # Fallback: count text patterns if JSON parsing fails
           if [ "$HIGH_ALERTS" = "0" ] && [ "$MEDIUM_ALERTS" = "0" ]; then
             HIGH_ALERTS=$(grep -c -i "high.*risk\|risk.*high" zap_report.json 2>/dev/null || echo "0")
             MEDIUM_ALERTS=$(grep -c -i "medium.*risk\|risk.*medium" zap_report.json 2>/dev/null || echo "0")
           fi
-          
+
           echo "ZAP High severity alerts: $HIGH_ALERTS"
           echo "ZAP Medium severity alerts: $MEDIUM_ALERTS"
-          
-          # More lenient thresholds for academic environment
+
           if [ "$HIGH_ALERTS" -gt 2 ] 2>/dev/null; then
             echo "DAST SECURITY GATE FAILED: Critical vulnerabilities found by ZAP ($HIGH_ALERTS)"
             exit 1
           fi
-          
-          if [ "$MEDIUM_ALERTS" -gt 2 ] 2>/dev/null; then
+
+          if [ "$MEDIUM_ALERTS" -gt 5 ] 2>/dev/null; then
             echo "DAST SECURITY GATE WARNING: Many medium severity issues found ($MEDIUM_ALERTS)"
           fi
         else
           echo "ZAP scan results not found or empty - allowing deployment"
         fi
-        
-        # Check Wapiti results for vulnerabilities (improved pattern matching)
+
+        # Check Wapiti results for vulnerabilities
         if [ -f wapiti_report.txt ] && [ -s wapiti_report.txt ]; then
-          # Count actual security issues from the summary section
           WAPITI_VULNS=0
           
-          # Look for specific vulnerability types that matter
+          # Look for specific vulnerability types
           SQL_INJ=$(grep -E "SQL Injection.*:" wapiti_report.txt | grep -o "[0-9]\+" | head -1 2>/dev/null || echo "0")
           XSS=$(grep -E "Cross Site Scripting.*:" wapiti_report.txt | grep -o "[0-9]\+" | head -1 2>/dev/null || echo "0") 
           CMD_EXEC=$(grep -E "Command execution.*:" wapiti_report.txt | grep -o "[0-9]\+" | head -1 2>/dev/null || echo "0")
           PATH_TRAV=$(grep -E "Path Traversal.*:" wapiti_report.txt | grep -o "[0-9]\+" | head -1 2>/dev/null || echo "0")
           
-          # Sum up critical vulnerabilities only
           WAPITI_VULNS=$((SQL_INJ + XSS + CMD_EXEC + PATH_TRAV))
-          
+
           echo "Wapiti critical vulnerabilities found: $WAPITI_VULNS (SQL:$SQL_INJ, XSS:$XSS, CmdExec:$CMD_EXEC, PathTrav:$PATH_TRAV)"
-          
-          # Only fail on actual critical vulnerabilities, ignore missing headers
+
           if [ "$WAPITI_VULNS" -gt 2 ] 2>/dev/null; then
             echo "DAST SECURITY GATE FAILED: Critical vulnerabilities found by Wapiti ($WAPITI_VULNS)"
             exit 1
@@ -542,7 +529,7 @@ jobs:
         else
           echo "Wapiti scan results not found or empty - allowing deployment"
         fi
-        
+
         echo "DAST SECURITY GATE PASSED: Security testing completed"
 
   security-summary:
