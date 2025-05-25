@@ -229,21 +229,35 @@ jobs:
       run: |
         echo "Evaluating security gate criteria..."
         
-        # Check Bandit results for high severity issues (JSON format)
+        # Check Bandit results for high severity issues (improved JSON parsing)
         if [ -f bandit_report.json ] && [ -s bandit_report.json ]; then
+          # Check for both HIGH and MEDIUM severity since your report shows medium issues
           HIGH_ISSUES=$(jq '[.results[] | select(.issue_severity == "HIGH")] | length' bandit_report.json 2>/dev/null || echo "0")
+          MEDIUM_ISSUES=$(jq '[.results[] | select(.issue_severity == "MEDIUM")] | length' bandit_report.json 2>/dev/null || echo "0")
           echo "High severity SAST issues found: $HIGH_ISSUES"
-          if [ "$HIGH_ISSUES" -gt 2 ]; then
-            echo "SECURITY GATE FAILED: Too many high severity issues ($HIGH_ISSUES)"
+          echo "Medium severity SAST issues found: $MEDIUM_ISSUES"
+          # Fail on any high severity, or more than 2 medium severity issues
+          if [ "$HIGH_ISSUES" -gt 0 ] 2>/dev/null; then
+            echo "SECURITY GATE FAILED: High severity issues found ($HIGH_ISSUES)"
+            exit 1
+          fi
+          if [ "$MEDIUM_ISSUES" -gt 2 ] 2>/dev/null; then
+            echo "SECURITY GATE FAILED: Too many medium severity issues ($MEDIUM_ISSUES)"
             exit 1
           fi
         fi
         
-        # Check Safety results for critical vulnerabilities (text format)
+        # Check Safety results for critical vulnerabilities (improved parsing)
         if [ -f safety_report.txt ] && [ -s safety_report.txt ]; then
-          CRITICAL_VULNS=$(grep -c "vulnerability" safety_report.txt 2>/dev/null || echo "0")
+          # Look for actual vulnerability reports, not deprecation warnings
+          if grep -q "No known security vulnerabilities reported\|0 vulnerabilities reported" safety_report.txt 2>/dev/null; then
+            CRITICAL_VULNS=0
+          else
+            # Count actual vulnerability lines (avoid DEPRECATED warnings)
+            CRITICAL_VULNS=$(grep -c -E "vulnerability.*found|CVE-|GHSA-" safety_report.txt 2>/dev/null || echo "0")
+          fi
           echo "Critical vulnerabilities found by Safety: $CRITICAL_VULNS"
-          if [ "$CRITICAL_VULNS" -gt 5 ]; then
+          if [ "$CRITICAL_VULNS" -gt 0 ] 2>/dev/null; then
             echo "SECURITY GATE FAILED: Too many critical vulnerabilities ($CRITICAL_VULNS)"
             exit 1
           fi
@@ -253,7 +267,7 @@ jobs:
         if [ -f pip_audit_report.txt ] && [ -s pip_audit_report.txt ]; then
           PIP_AUDIT_VULNS=$(grep -c "vulnerability\|vulnerable" pip_audit_report.txt 2>/dev/null || echo "0")
           echo "Vulnerabilities found by pip-audit: $PIP_AUDIT_VULNS"
-          if [ "$PIP_AUDIT_VULNS" -gt 5 ]; then
+          if [ "$PIP_AUDIT_VULNS" -gt 0 ] 2>/dev/null; then
             echo "SECURITY GATE FAILED: Too many pip-audit vulnerabilities ($PIP_AUDIT_VULNS)"
             exit 1
           fi
@@ -263,11 +277,11 @@ jobs:
         if [ -f snyk_code_report.txt ] && [ -s snyk_code_report.txt ]; then
           SNYK_CODE_ISSUES=$(grep -c -E "✗|High:|Medium:|issues found|vulnerabilities found" snyk_code_report.txt 2>/dev/null || echo "0")
           # Also check if Snyk explicitly says "no issues"
-          if grep -q "no issues\|no vulnerabilities\|no problems" snyk_code_report.txt 2>/dev/null; then
+          if grep -q "no issues\|no vulnerabilities\|no problems\|No issues were found" snyk_code_report.txt 2>/dev/null; then
             SNYK_CODE_ISSUES=0
           fi
           echo "Code issues found by Snyk Code: $SNYK_CODE_ISSUES"
-          if [ "$SNYK_CODE_ISSUES" -gt 5 ]; then
+          if [ "$SNYK_CODE_ISSUES" -gt 0 ] 2>/dev/null; then
             echo "SECURITY GATE FAILED: Too many Snyk Code issues ($SNYK_CODE_ISSUES)"
             exit 1
           fi
@@ -277,11 +291,11 @@ jobs:
         if [ -f snyk_test_report.txt ] && [ -s snyk_test_report.txt ]; then
           SNYK_TEST_VULNS=$(grep -c -E "✗|vulnerability|High:|Medium:|issues found" snyk_test_report.txt 2>/dev/null || echo "0")
           # Check if Snyk says no vulnerabilities found
-          if grep -q "no vulnerable\|no issues\|no known vulnerabilities" snyk_test_report.txt 2>/dev/null; then
+          if grep -q "no vulnerable\|no issues\|no known vulnerabilities\|no vulnerable paths found" snyk_test_report.txt 2>/dev/null; then
             SNYK_TEST_VULNS=0
           fi
           echo "Dependency vulnerabilities found by Snyk Test: $SNYK_TEST_VULNS"
-          if [ "$SNYK_TEST_VULNS" -gt 8 ]; then
+          if [ "$SNYK_TEST_VULNS" -gt 0 ] 2>/dev/null; then
             echo "SECURITY GATE FAILED: Too many Snyk dependency vulnerabilities ($SNYK_TEST_VULNS)"
             exit 1
           fi
@@ -484,27 +498,37 @@ jobs:
           echo "ZAP Medium severity alerts: $MEDIUM_ALERTS"
           
           # More lenient thresholds for academic environment
-          if [ "$HIGH_ALERTS" -gt 1 ]; then
+          if [ "$HIGH_ALERTS" -gt 0 ] 2>/dev/null; then
             echo "DAST SECURITY GATE FAILED: Critical vulnerabilities found by ZAP ($HIGH_ALERTS)"
             exit 1
           fi
           
-          if [ "$MEDIUM_ALERTS" -gt 10 ]; then
+          if [ "$MEDIUM_ALERTS" -gt 0 ] 2>/dev/null; then
             echo "DAST SECURITY GATE WARNING: Many medium severity issues found ($MEDIUM_ALERTS)"
           fi
         else
           echo "ZAP scan results not found or empty - allowing deployment"
         fi
         
-        # Check Wapiti results for vulnerabilities (more specific patterns)
+        # Check Wapiti results for vulnerabilities (improved pattern matching)
         if [ -f wapiti_report.txt ] && [ -s wapiti_report.txt ]; then
-          # Count only actual vulnerability findings, not mentions
-          WAPITI_VULNS=$(grep -c -E "^\[.*\].*vulnerability|^\[.*\].*SQL.*injection|^\[.*\].*XSS|^\[.*\].*executed" wapiti_report.txt 2>/dev/null || echo "0")
-          echo "Wapiti vulnerabilities found: $WAPITI_VULNS"
+          # Count actual security issues from the summary section
+          WAPITI_VULNS=0
           
-          # Lenient threshold for academic environment  
-          if [ "$WAPITI_VULNS" -gt 5 ]; then
-            echo "DAST SECURITY GATE FAILED: Too many vulnerabilities found by Wapiti ($WAPITI_VULNS)"
+          # Look for specific vulnerability types that matter
+          SQL_INJ=$(grep -E "SQL Injection.*:" wapiti_report.txt | grep -o "[0-9]\+" | head -1 2>/dev/null || echo "0")
+          XSS=$(grep -E "Cross Site Scripting.*:" wapiti_report.txt | grep -o "[0-9]\+" | head -1 2>/dev/null || echo "0") 
+          CMD_EXEC=$(grep -E "Command execution.*:" wapiti_report.txt | grep -o "[0-9]\+" | head -1 2>/dev/null || echo "0")
+          PATH_TRAV=$(grep -E "Path Traversal.*:" wapiti_report.txt | grep -o "[0-9]\+" | head -1 2>/dev/null || echo "0")
+          
+          # Sum up critical vulnerabilities only
+          WAPITI_VULNS=$((SQL_INJ + XSS + CMD_EXEC + PATH_TRAV))
+          
+          echo "Wapiti critical vulnerabilities found: $WAPITI_VULNS (SQL:$SQL_INJ, XSS:$XSS, CmdExec:$CMD_EXEC, PathTrav:$PATH_TRAV)"
+          
+          # Only fail on actual critical vulnerabilities, ignore missing headers
+          if [ "$WAPITI_VULNS" -gt 0 ] 2>/dev/null; then
+            echo "DAST SECURITY GATE FAILED: Critical vulnerabilities found by Wapiti ($WAPITI_VULNS)"
             exit 1
           fi
         else
