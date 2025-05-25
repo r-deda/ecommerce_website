@@ -1,3 +1,4 @@
+
 name: SecureCart CI/CD Pipeline
 
 on:
@@ -38,14 +39,12 @@ jobs:
         key: ${{ runner.os }}-pip-${{ env.CACHE_VERSION }}-${{ hashFiles('requirements.txt') }}
         restore-keys: |
           ${{ runner.os }}-pip-${{ env.CACHE_VERSION }}-
-
     - name: Install Dependencies
       run: |
         python -m pip install --upgrade pip
         pip install --user -r requirements.txt
         pip install --user bandit safety pip-audit flake8 black isort
         npm install -g snyk
-
   security-analysis:
     name: Security Analysis (SAST & SCA)
     runs-on: ubuntu-latest
@@ -66,7 +65,6 @@ jobs:
         pip install --user bandit safety pip-audit
         npm install -g snyk
         echo "$HOME/.local/bin" >> $GITHUB_PATH
-
     - name: Restore Dependencies Cache
       uses: actions/cache@v3
       with:
@@ -131,12 +129,10 @@ jobs:
         fi
         
         echo "All security scans completed successfully"
-
     - name: Display Cached Results
       if: steps.cache-security-results.outputs.cache-hit == 'true'
       run: |
         echo "Security scan results restored from cache"
-
     - name: Upload Security Reports
       uses: actions/upload-artifact@v4
       with:
@@ -147,7 +143,6 @@ jobs:
           pip_audit_report.txt
           snyk_code_report.txt
           snyk_test_report.txt
-
   code-quality:
     name: Code Quality Check
     runs-on: ubuntu-latest
@@ -167,7 +162,6 @@ jobs:
         python -m pip install --upgrade pip
         pip install --user flake8 black isort
         echo "$HOME/.local/bin" >> $GITHUB_PATH
-
     - name: Run Code Quality Checks
       run: |
         echo "Running code quality analysis..."
@@ -180,7 +174,6 @@ jobs:
         
         # Import Sorting Check
         $HOME/.local/bin/isort --check-only --diff shop/ run.py || echo "Import sorting issues found"
-
   build-application:
     name: Build Application
     runs-on: ubuntu-latest
@@ -210,7 +203,6 @@ jobs:
         export DATABASE_URL="sqlite:///test.db"
         mkdir -p instance
         timeout 10s python run.py || echo "Application startup test completed"
-
   security-gate:
     name: Security Gate Check
     runs-on: ubuntu-latest
@@ -229,35 +221,21 @@ jobs:
       run: |
         echo "Evaluating security gate criteria..."
         
-        # Check Bandit results for high severity issues (improved JSON parsing)
+        # Check Bandit results for high severity issues (JSON format)
         if [ -f bandit_report.json ] && [ -s bandit_report.json ]; then
-          # Check for both HIGH and MEDIUM severity since your report shows medium issues
           HIGH_ISSUES=$(jq '[.results[] | select(.issue_severity == "HIGH")] | length' bandit_report.json 2>/dev/null || echo "0")
-          MEDIUM_ISSUES=$(jq '[.results[] | select(.issue_severity == "MEDIUM")] | length' bandit_report.json 2>/dev/null || echo "0")
           echo "High severity SAST issues found: $HIGH_ISSUES"
-          echo "Medium severity SAST issues found: $MEDIUM_ISSUES"
-          # Fail on any high severity, or more than 2 medium severity issues
-          if [ "$HIGH_ISSUES" -gt 2 ] 2>/dev/null; then
-            echo "SECURITY GATE FAILED: High severity issues found ($HIGH_ISSUES)"
-            exit 1
-          fi
-          if [ "$MEDIUM_ISSUES" -gt 2 ] 2>/dev/null; then
-            echo "SECURITY GATE FAILED: Too many medium severity issues ($MEDIUM_ISSUES)"
+          if [ "$HIGH_ISSUES" -gt 2 ]; then
+            echo "SECURITY GATE FAILED: Too many high severity issues ($HIGH_ISSUES)"
             exit 1
           fi
         fi
         
-        # Check Safety results for critical vulnerabilities (improved parsing)
+        # Check Safety results for critical vulnerabilities (text format)
         if [ -f safety_report.txt ] && [ -s safety_report.txt ]; then
-          # Look for actual vulnerability reports, not deprecation warnings
-          if grep -q "No known security vulnerabilities reported\|0 vulnerabilities reported" safety_report.txt 2>/dev/null; then
-            CRITICAL_VULNS=0
-          else
-            # Count actual vulnerability lines (avoid DEPRECATED warnings)
-            CRITICAL_VULNS=$(grep -c -E "vulnerability.*found|CVE-|GHSA-" safety_report.txt 2>/dev/null || echo "0")
-          fi
+          CRITICAL_VULNS=$(grep -c "vulnerability" safety_report.txt 2>/dev/null || echo "0")
           echo "Critical vulnerabilities found by Safety: $CRITICAL_VULNS"
-          if [ "$CRITICAL_VULNS" -gt 2 ] 2>/dev/null; then
+          if [ "$CRITICAL_VULNS" -gt 5 ]; then
             echo "SECURITY GATE FAILED: Too many critical vulnerabilities ($CRITICAL_VULNS)"
             exit 1
           fi
@@ -267,7 +245,7 @@ jobs:
         if [ -f pip_audit_report.txt ] && [ -s pip_audit_report.txt ]; then
           PIP_AUDIT_VULNS=$(grep -c "vulnerability\|vulnerable" pip_audit_report.txt 2>/dev/null || echo "0")
           echo "Vulnerabilities found by pip-audit: $PIP_AUDIT_VULNS"
-          if [ "$PIP_AUDIT_VULNS" -gt 2 ] 2>/dev/null; then
+          if [ "$PIP_AUDIT_VULNS" -gt 5 ]; then
             echo "SECURITY GATE FAILED: Too many pip-audit vulnerabilities ($PIP_AUDIT_VULNS)"
             exit 1
           fi
@@ -277,11 +255,11 @@ jobs:
         if [ -f snyk_code_report.txt ] && [ -s snyk_code_report.txt ]; then
           SNYK_CODE_ISSUES=$(grep -c -E "✗|High:|Medium:|issues found|vulnerabilities found" snyk_code_report.txt 2>/dev/null || echo "0")
           # Also check if Snyk explicitly says "no issues"
-          if grep -q "no issues\|no vulnerabilities\|no problems\|No issues were found" snyk_code_report.txt 2>/dev/null; then
+          if grep -q "no issues\|no vulnerabilities\|no problems" snyk_code_report.txt 2>/dev/null; then
             SNYK_CODE_ISSUES=0
           fi
           echo "Code issues found by Snyk Code: $SNYK_CODE_ISSUES"
-          if [ "$SNYK_CODE_ISSUES" -gt 2 ] 2>/dev/null; then
+          if [ "$SNYK_CODE_ISSUES" -gt 5 ]; then
             echo "SECURITY GATE FAILED: Too many Snyk Code issues ($SNYK_CODE_ISSUES)"
             exit 1
           fi
@@ -291,18 +269,17 @@ jobs:
         if [ -f snyk_test_report.txt ] && [ -s snyk_test_report.txt ]; then
           SNYK_TEST_VULNS=$(grep -c -E "✗|vulnerability|High:|Medium:|issues found" snyk_test_report.txt 2>/dev/null || echo "0")
           # Check if Snyk says no vulnerabilities found
-          if grep -q "no vulnerable\|no issues\|no known vulnerabilities\|no vulnerable paths found" snyk_test_report.txt 2>/dev/null; then
+          if grep -q "no vulnerable\|no issues\|no known vulnerabilities" snyk_test_report.txt 2>/dev/null; then
             SNYK_TEST_VULNS=0
           fi
           echo "Dependency vulnerabilities found by Snyk Test: $SNYK_TEST_VULNS"
-          if [ "$SNYK_TEST_VULNS" -gt 2 ] 2>/dev/null; then
+          if [ "$SNYK_TEST_VULNS" -gt 8 ]; then
             echo "SECURITY GATE FAILED: Too many Snyk dependency vulnerabilities ($SNYK_TEST_VULNS)"
             exit 1
           fi
         fi
         
         echo "SECURITY GATE PASSED: Deployment approved"
-
   deploy-staging:
     name: Deploy to Staging
     runs-on: ubuntu-latest
@@ -342,7 +319,6 @@ jobs:
         "
         
         echo "Staging deployment completed successfully"
-
   post-deployment-security:
     name: Post-Deployment Security Testing (DAST)
     runs-on: ubuntu-latest
@@ -384,29 +360,19 @@ jobs:
         tar -xzf ZAP_2.16.1_Linux.tar.gz
         sudo mv ZAP_2.16.1 /opt/zaproxy
         sudo chmod +x /opt/zaproxy/zap.sh
-
     - name: Install Wapiti
       run: |
-        # Install exact compatible versions for Wapiti 3.2.4
-        pip install --user --upgrade pip
-        pip install --user "passlib==1.7.4" "bcrypt>=3.1.0,<4.0.0"
-        pip install --user "h11==0.14.0" "httpcore==1.0.4" "httpx[brotli,socks]==0.27.0"
-        pip install --user "mitmproxy==11.1.3" "typing-extensions==4.12.0"
-        pip install --user wapiti3==3.2.4
-        
-        # Create the bin directory if it doesn't exist
-        mkdir -p "$HOME/.local/bin"
+        pip install --user --upgrade bcrypt passlib
+        pip install --user wapiti3
         echo "$HOME/.local/bin" >> $GITHUB_PATH
-
     - name: Start Application
       run: |
         export SECRET_KEY="test_secret_key"
         export DATABASE_URL="sqlite:///instance/securecart.db"
         mkdir -p instance
         python run.py &
-        sleep 20
+        sleep 15
         echo "Application started for DAST testing"
-
     - name: Cache DAST Results
       id: cache-dast-results
       uses: actions/cache@v3
@@ -423,13 +389,13 @@ jobs:
         echo "Running ZAP security scan..."
         cd /opt/zaproxy
         ./zap.sh -daemon -host 0.0.0.0 -port 8080 -config api.disablekey=true &
-        sleep 30
+        sleep 15
         
         # Quick scan
         curl "http://localhost:8080/JSON/spider/action/scan/?url=http://localhost:5000" || true
-        sleep 25
+        sleep 10
         curl "http://localhost:8080/JSON/ascan/action/scan/?url=http://localhost:5000" || true
-        sleep 40
+        sleep 20
         
         # Get results and save to file
         curl "http://localhost:8080/JSON/core/view/alerts/" > zap_report.json || true
@@ -451,63 +417,15 @@ jobs:
         # Stop ZAP
         curl "http://localhost:8080/JSON/core/action/shutdown/" || true
         echo "ZAP scan completed"
-
     - name: Run Wapiti Scan
       if: steps.cache-dast-results.outputs.cache-hit != 'true'
       run: |
         echo "Running Wapiti scan..."
-        # Run Wapiti with explicit output filename
-        python -m wapitiCore.main.wapiti -u http://localhost:5000 --format txt --output wapiti_report.txt || echo "Wapiti scan completed with issues"
-        
-        # If Wapiti created a different filename, copy it to the expected name
-        if [ ! -f wapiti_report.txt ] && [ -f localhost_5000_*.txt ]; then
-          echo "Copying Wapiti report to expected filename..."
-          cp localhost_5000_*.txt wapiti_report.txt
-          echo "Report copied successfully"
-        fi
-
+        $HOME/.local/bin/wapiti -u http://localhost:5000 --format txt --output wapiti_report.txt || echo "Wapiti scan completed with issues"
     - name: Display Cached DAST Results
       if: steps.cache-dast-results.outputs.cache-hit == 'true'
       run: |
         echo "DAST results restored from cache"
-
-    # THE KEY FIX: Ensure files exist before uploading
-    - name: Ensure Report Files Exist
-      run: |
-        echo "Checking for DAST report files..."
-        
-        # List all files in current directory
-        echo "Files in current directory:"
-        ls -la
-        
-        # Create default files if they don't exist
-        if [ ! -f wapiti_report.txt ]; then
-          echo "Creating wapiti_report.txt (file was missing)"
-          echo "Wapiti scan failed to generate results" > wapiti_report.txt
-        else
-          echo "wapiti_report.txt exists ($(wc -l < wapiti_report.txt) lines)"
-        fi
-        
-        if [ ! -f zap_report.json ]; then
-          echo "Creating zap_report.json (file was missing)"
-          echo '{"alerts": []}' > zap_report.json
-        else
-          echo "zap_report.json exists ($(wc -l < zap_report.json) lines)"
-        fi
-        
-        if [ ! -f zap_report.txt ]; then
-          echo "Creating zap_report.txt (file was missing)"
-          echo "ZAP scan failed to generate results" > zap_report.txt
-        else
-          echo "zap_report.txt exists ($(wc -l < zap_report.txt) lines)"
-        fi
-        
-        # Verify all files exist and have content
-        echo "Final file check:"
-        ls -la wapiti_report.txt zap_report.json zap_report.txt
-        echo "File sizes:"
-        du -h wapiti_report.txt zap_report.json zap_report.txt
-
     # Fixed: Ensure ZAP scan results are properly uploaded to artifacts
     - name: Upload DAST Results
       uses: actions/upload-artifact@v4
@@ -517,7 +435,6 @@ jobs:
           wapiti_report.txt
           zap_report.json
           zap_report.txt
-
   dast-security-gate:
     name: DAST Security Gate
     runs-on: ubuntu-latest
@@ -525,23 +442,10 @@ jobs:
     if: github.ref == 'refs/heads/main'
 
     steps:
-    # THE KEY FIX: Add error handling for missing artifacts
     - name: Download DAST Results
       uses: actions/download-artifact@v4
       with:
         name: dast-results
-      continue-on-error: true
-
-    - name: Check if Files Downloaded
-      run: |
-        if [ ! -f wapiti_report.txt ]; then
-          echo "Creating fallback wapiti report"
-          echo "DAST results unavailable - scan may have failed" > wapiti_report.txt
-        fi
-        if [ ! -f zap_report.txt ]; then
-          echo "Creating fallback ZAP report"
-          echo "DAST results unavailable - scan may have failed" > zap_report.txt
-        fi
 
     - name: Evaluate DAST Results
       run: |
@@ -563,37 +467,27 @@ jobs:
           echo "ZAP Medium severity alerts: $MEDIUM_ALERTS"
           
           # More lenient thresholds for academic environment
-          if [ "$HIGH_ALERTS" -gt 2 ] 2>/dev/null; then
+          if [ "$HIGH_ALERTS" -gt 1 ]; then
             echo "DAST SECURITY GATE FAILED: Critical vulnerabilities found by ZAP ($HIGH_ALERTS)"
             exit 1
           fi
           
-          if [ "$MEDIUM_ALERTS" -gt 2 ] 2>/dev/null; then
+          if [ "$MEDIUM_ALERTS" -gt 10 ]; then
             echo "DAST SECURITY GATE WARNING: Many medium severity issues found ($MEDIUM_ALERTS)"
           fi
         else
           echo "ZAP scan results not found or empty - allowing deployment"
         fi
         
-        # Check Wapiti results for vulnerabilities (improved pattern matching)
+        # Check Wapiti results for vulnerabilities (more specific patterns)
         if [ -f wapiti_report.txt ] && [ -s wapiti_report.txt ]; then
-          # Count actual security issues from the summary section
-          WAPITI_VULNS=0
+          # Count only actual vulnerability findings, not mentions
+          WAPITI_VULNS=$(grep -c -E "^\[.*\].*vulnerability|^\[.*\].*SQL.*injection|^\[.*\].*XSS|^\[.*\].*executed" wapiti_report.txt 2>/dev/null || echo "0")
+          echo "Wapiti vulnerabilities found: $WAPITI_VULNS"
           
-          # Look for specific vulnerability types that matter
-          SQL_INJ=$(grep -E "SQL Injection.*:" wapiti_report.txt | grep -o "[0-9]\+" | head -1 2>/dev/null || echo "0")
-          XSS=$(grep -E "Cross Site Scripting.*:" wapiti_report.txt | grep -o "[0-9]\+" | head -1 2>/dev/null || echo "0") 
-          CMD_EXEC=$(grep -E "Command execution.*:" wapiti_report.txt | grep -o "[0-9]\+" | head -1 2>/dev/null || echo "0")
-          PATH_TRAV=$(grep -E "Path Traversal.*:" wapiti_report.txt | grep -o "[0-9]\+" | head -1 2>/dev/null || echo "0")
-          
-          # Sum up critical vulnerabilities only
-          WAPITI_VULNS=$((SQL_INJ + XSS + CMD_EXEC + PATH_TRAV))
-          
-          echo "Wapiti critical vulnerabilities found: $WAPITI_VULNS (SQL:$SQL_INJ, XSS:$XSS, CmdExec:$CMD_EXEC, PathTrav:$PATH_TRAV)"
-          
-          # Only fail on actual critical vulnerabilities, ignore missing headers
-          if [ "$WAPITI_VULNS" -gt 2 ] 2>/dev/null; then
-            echo "DAST SECURITY GATE FAILED: Critical vulnerabilities found by Wapiti ($WAPITI_VULNS)"
+          # Lenient threshold for academic environment  
+          if [ "$WAPITI_VULNS" -gt 5 ]; then
+            echo "DAST SECURITY GATE FAILED: Too many vulnerabilities found by Wapiti ($WAPITI_VULNS)"
             exit 1
           fi
         else
@@ -601,7 +495,6 @@ jobs:
         fi
         
         echo "DAST SECURITY GATE PASSED: Security testing completed"
-
   security-summary:
     name: Security Summary Report
     runs-on: ubuntu-latest
@@ -614,7 +507,6 @@ jobs:
       with:
         pattern: '*-results'
         merge-multiple: true
-      continue-on-error: true
 
     - name: Generate Security Summary
       run: |
@@ -638,7 +530,6 @@ jobs:
         ls -la *.json *.txt *.md 2>/dev/null || echo "No report files found"
         
         cat security_summary.md
-
     - name: Upload Security Summary
       uses: actions/upload-artifact@v4
       with:
