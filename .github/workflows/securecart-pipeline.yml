@@ -387,12 +387,30 @@ jobs:
 
     - name: Install Wapiti
       run: |
+        # Ensure pip and setuptools are up to date
+        python -m pip install --upgrade pip setuptools wheel
+        
+        # Install dependencies first
         pip install --user --upgrade bcrypt passlib
-        pip install --user wapiti3
+        
+        # Try installing wapiti3 with verbose output
+        echo "Installing wapiti3..."
+        pip install --user wapiti3 --verbose || echo "Wapiti3 installation failed"
+        
+        # Add to PATH
         echo "$HOME/.local/bin" >> $GITHUB_PATH
-        # Verify installation
-        ls -la $HOME/.local/bin/ | grep -i wapiti || echo "Wapiti not found in expected location"
-        which wapiti3 || echo "wapiti3 command not found"
+        
+        # Debug: Check what actually got installed
+        echo "Contents of ~/.local/bin/:"
+        ls -la $HOME/.local/bin/ || echo "Directory doesn't exist"
+        echo "Looking for wapiti executables:"
+        find $HOME/.local -name "*wapiti*" 2>/dev/null || echo "No wapiti files found"
+        
+        # Alternative: Try installing from git if pip fails
+        if [ ! -f "$HOME/.local/bin/wapiti" ] && [ ! -f "$HOME/.local/bin/wapiti3" ]; then
+          echo "Trying alternative installation method..."
+          pip install --user git+https://github.com/wapiti-scanner/wapiti || echo "Git installation also failed"
+        fi
 
     - name: Start Application
       run: |
@@ -452,13 +470,14 @@ jobs:
       if: steps.cache-dast-results.outputs.cache-hit != 'true'
       run: |
         echo "Running Wapiti scan..."
-        # Try different command variations
-        if command -v wapiti3 >/dev/null 2>&1; then
-          wapiti3 -u http://localhost:5000 --format txt --output wapiti_report.txt || echo "Wapiti3 scan completed with issues"
-        elif command -v $HOME/.local/bin/wapiti3 >/dev/null 2>&1; then
+        # First try the exact command that used to work
+        if [ -f "$HOME/.local/bin/wapiti" ]; then
+          $HOME/.local/bin/wapiti -u http://localhost:5000 --format txt --output wapiti_report.txt || echo "Wapiti scan completed with issues"
+        elif [ -f "$HOME/.local/bin/wapiti3" ]; then
+          echo "Using wapiti3 instead of wapiti"
           $HOME/.local/bin/wapiti3 -u http://localhost:5000 --format txt --output wapiti_report.txt || echo "Wapiti3 scan completed with issues"
         else
-          echo "Wapiti not found - creating placeholder report"
+          echo "Neither wapiti nor wapiti3 found - installation may have failed"
           echo "Wapiti installation failed - scan not performed" > wapiti_report.txt
         fi
 
