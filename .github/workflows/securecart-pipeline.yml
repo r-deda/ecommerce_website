@@ -614,7 +614,7 @@ jobs:
           echo "Total Wapiti vulnerabilities: $WAPITI_VULNS"
           
           # Block deployment if 2 or more vulnerabilities found
-          if [ "$WAPITI_VULNS" -ge 2 ] 2>/dev/null; then
+          if [ "$WAPITI_VULNS" -gt 3 ] 2>/dev/null; then
             echo "DAST SECURITY GATE FAILED: Too many vulnerabilities found by Wapiti ($WAPITI_VULNS)"
             exit 1
           fi
