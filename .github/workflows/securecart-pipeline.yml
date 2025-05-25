@@ -9,7 +9,7 @@ on:
 env:
   PYTHON_VERSION: '3.12'
   SECRET_KEY: ${{ secrets.SECRET_KEY || 'dev-secret-key' }}
-  CACHE_VERSION: 'v3'
+  CACHE_VERSION: 'v4'
 
 jobs:
   setup-and-cache:
@@ -27,6 +27,7 @@ jobs:
       with:
         python-version: ${{ env.PYTHON_VERSION }}
 
+    # Enhanced caching with better paths and restore keys
     - name: Cache Python Dependencies
       id: cache-deps
       uses: actions/cache@v3
@@ -34,15 +35,29 @@ jobs:
         path: |
           ~/.cache/pip
           ~/.local/lib/python${{ env.PYTHON_VERSION }}/site-packages
+          /opt/hostedtoolcache/Python/*/x64/lib/python*/site-packages
         key: ${{ runner.os }}-pip-${{ env.CACHE_VERSION }}-${{ hashFiles('requirements.txt') }}
         restore-keys: |
           ${{ runner.os }}-pip-${{ env.CACHE_VERSION }}-
+
+    # Cache Node dependencies
+    - name: Cache Node Dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.npm
+          /usr/local/lib/node_modules
+        key: ${{ runner.os }}-node-${{ env.CACHE_VERSION }}-npm
+        restore-keys: |
+          ${{ runner.os }}-node-${{ env.CACHE_VERSION }}-
+
     - name: Install Dependencies
       run: |
         python -m pip install --upgrade pip
         pip install --user -r requirements.txt
         pip install --user bandit safety pip-audit flake8 black isort
         npm install -g snyk
+
   security-analysis:
     name: Security Analysis (SAST & SCA)
     runs-on: ubuntu-latest
@@ -63,14 +78,26 @@ jobs:
         pip install --user bandit safety pip-audit
         npm install -g snyk
         echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+    # Restore caches from setup job
     - name: Restore Dependencies Cache
       uses: actions/cache@v3
       with:
         path: |
           ~/.cache/pip
           ~/.local/lib/python${{ env.PYTHON_VERSION }}/site-packages
+          /opt/hostedtoolcache/Python/*/x64/lib/python*/site-packages
         key: ${{ runner.os }}-pip-${{ env.CACHE_VERSION }}-${{ hashFiles('requirements.txt') }}
 
+    - name: Restore Node Cache
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.npm
+          /usr/local/lib/node_modules
+        key: ${{ runner.os }}-node-${{ env.CACHE_VERSION }}-npm
+
+    # Enhanced security scan caching with better cache keys
     - name: Cache Security Scan Results
       id: cache-security-results
       uses: actions/cache@v3
@@ -81,7 +108,9 @@ jobs:
           pip_audit_report.txt
           snyk_code_report.txt
           snyk_test_report.txt
-        key: security-results-${{ hashFiles('**/*.py', 'requirements.txt') }}-${{ github.sha }}
+        key: security-results-${{ env.CACHE_VERSION }}-${{ hashFiles('**/*.py', 'requirements.txt') }}-${{ github.sha }}
+        restore-keys: |
+          security-results-${{ env.CACHE_VERSION }}-${{ hashFiles('**/*.py', 'requirements.txt') }}-
 
     - name: Run Security Scans
       if: steps.cache-security-results.outputs.cache-hit != 'true'
@@ -126,10 +155,12 @@ jobs:
         fi
         
         echo "All security scans completed successfully"
+
     - name: Display Cached Results
       if: steps.cache-security-results.outputs.cache-hit == 'true'
       run: |
         echo "Security scan results restored from cache"
+
     - name: Upload Security Reports
       uses: actions/upload-artifact@v4
       with:
@@ -140,6 +171,7 @@ jobs:
           pip_audit_report.txt
           snyk_code_report.txt
           snyk_test_report.txt
+
   code-quality:
     name: Code Quality Check
     runs-on: ubuntu-latest
@@ -159,9 +191,31 @@ jobs:
         python -m pip install --upgrade pip
         pip install --user flake8 black isort
         echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+    # Restore dependency cache
+    - name: Restore Dependencies Cache
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cache/pip
+          ~/.local/lib/python${{ env.PYTHON_VERSION }}/site-packages
+          /opt/hostedtoolcache/Python/*/x64/lib/python*/site-packages
+        key: ${{ runner.os }}-pip-${{ env.CACHE_VERSION }}-${{ hashFiles('requirements.txt') }}
+
+    # Cache code quality results
+    - name: Cache Code Quality Results
+      id: cache-quality-results
+      uses: actions/cache@v3
+      with:
+        path: |
+          .quality_results/
+        key: code-quality-${{ env.CACHE_VERSION }}-${{ hashFiles('**/*.py') }}
+
     - name: Run Code Quality Checks
+      if: steps.cache-quality-results.outputs.cache-hit != 'true'
       run: |
         echo "Running code quality analysis..."
+        mkdir -p .quality_results
         
         # Code Formatting Check
         $HOME/.local/bin/black --check --diff shop/ run.py || echo "Black formatting issues found"
@@ -171,6 +225,15 @@ jobs:
         
         # Import Sorting Check
         $HOME/.local/bin/isort --check-only --diff shop/ run.py || echo "Import sorting issues found"
+        
+        # Cache marker
+        touch .quality_results/completed
+
+    - name: Display Cached Quality Results
+      if: steps.cache-quality-results.outputs.cache-hit == 'true'
+      run: |
+        echo "Code quality results restored from cache"
+
   build-application:
     name: Build Application
     runs-on: ubuntu-latest
@@ -185,13 +248,24 @@ jobs:
       with:
         python-version: ${{ env.PYTHON_VERSION }}
 
+    # Restore dependency cache
     - name: Restore Dependencies Cache
       uses: actions/cache@v3
       with:
         path: |
           ~/.cache/pip
           ~/.local/lib/python${{ env.PYTHON_VERSION }}/site-packages
+          /opt/hostedtoolcache/Python/*/x64/lib/python*/site-packages
         key: ${{ runner.os }}-pip-${{ env.CACHE_VERSION }}-${{ hashFiles('requirements.txt') }}
+
+    # Cache build artifacts
+    - name: Cache Build Artifacts
+      uses: actions/cache@v3
+      with:
+        path: |
+          instance/
+          *.db
+        key: build-artifacts-${{ env.CACHE_VERSION }}-${{ hashFiles('**/*.py') }}
 
     - name: Test Application Startup
       run: |
@@ -200,6 +274,7 @@ jobs:
         export DATABASE_URL="sqlite:///test.db"
         mkdir -p instance
         timeout 10s python run.py || echo "Application startup test completed"
+
   security-gate:
     name: Security Gate Check
     runs-on: ubuntu-latest
@@ -214,7 +289,17 @@ jobs:
     - name: Install jq for JSON Processing
       run: sudo apt-get update && sudo apt-get install -y jq
 
+    # Cache security gate evaluation
+    - name: Cache Security Gate Evaluation
+      id: cache-gate-evaluation
+      uses: actions/cache@v3
+      with:
+        path: |
+          gate_results.txt
+        key: security-gate-${{ env.CACHE_VERSION }}-${{ hashFiles('bandit_report.json', 'safety_report.txt', 'pip_audit_report.txt') }}
+
     - name: Security Gate Evaluation
+      if: steps.cache-gate-evaluation.outputs.cache-hit != 'true'
       run: |
         echo "Evaluating security gate criteria..."
         
@@ -248,7 +333,14 @@ jobs:
           fi
         fi
         
-        echo "SECURITY GATE PASSED: Deployment approved"
+        echo "SECURITY GATE PASSED: Deployment approved" > gate_results.txt
+
+    - name: Display Cached Gate Results
+      if: steps.cache-gate-evaluation.outputs.cache-hit == 'true'
+      run: |
+        echo "Security gate evaluation restored from cache"
+        cat gate_results.txt
+
   deploy-staging:
     name: Deploy to Staging
     runs-on: ubuntu-latest
@@ -264,12 +356,14 @@ jobs:
       with:
         python-version: ${{ env.PYTHON_VERSION }}
 
+    # Restore dependency cache
     - name: Restore Dependencies Cache
       uses: actions/cache@v3
       with:
         path: |
           ~/.cache/pip
           ~/.local/lib/python${{ env.PYTHON_VERSION }}/site-packages
+          /opt/hostedtoolcache/Python/*/x64/lib/python*/site-packages
         key: ${{ runner.os }}-pip-${{ env.CACHE_VERSION }}-${{ hashFiles('requirements.txt') }}
 
     - name: Deploy Application
@@ -288,6 +382,7 @@ jobs:
         "
         
         echo "Staging deployment completed successfully"
+
   post-deployment-security:
     name: Post-Deployment Security Testing (DAST)
     runs-on: ubuntu-latest
@@ -303,15 +398,26 @@ jobs:
       with:
         python-version: ${{ env.PYTHON_VERSION }}
 
+    # Restore dependency cache
     - name: Restore Dependencies Cache
       uses: actions/cache@v3
       with:
         path: |
           ~/.cache/pip
           ~/.local/lib/python${{ env.PYTHON_VERSION }}/site-packages
+          /opt/hostedtoolcache/Python/*/x64/lib/python*/site-packages
         key: ${{ runner.os }}-pip-${{ env.CACHE_VERSION }}-${{ hashFiles('requirements.txt') }}
 
+    # Cache ZAP installation to avoid downloading every time
+    - name: Cache ZAP Installation
+      id: cache-zap
+      uses: actions/cache@v3
+      with:
+        path: /opt/zaproxy
+        key: zap-installation-${{ env.CACHE_VERSION }}
+
     - name: Install ZAP
+      if: steps.cache-zap.outputs.cache-hit != 'true'
       run: |
         sudo apt-get update
         sudo apt-get install -y default-jdk wget
@@ -320,11 +426,13 @@ jobs:
         tar -xzf ZAP_2.16.1_Linux.tar.gz
         sudo mv ZAP_2.16.1 /opt/zaproxy
         sudo chmod +x /opt/zaproxy/zap.sh
+
     - name: Install Wapiti
       run: |
         pip install --user --upgrade bcrypt passlib
         pip install --user wapiti3
         echo "$HOME/.local/bin" >> $GITHUB_PATH
+
     - name: Start Application
       run: |
         export SECRET_KEY="test_secret_key"
@@ -333,6 +441,8 @@ jobs:
         python run.py &
         sleep 15
         echo "Application started for DAST testing"
+
+    # Cache DAST scan results
     - name: Cache DAST Results
       id: cache-dast-results
       uses: actions/cache@v3
@@ -341,7 +451,7 @@ jobs:
           wapiti_report.txt
           zap_report.json
           zap_report.txt
-        key: dast-results-${{ hashFiles('**/*.py') }}-${{ github.sha }}
+        key: dast-results-${{ env.CACHE_VERSION }}-${{ hashFiles('**/*.py') }}-${{ github.sha }}
 
     - name: Run ZAP Scan
       if: steps.cache-dast-results.outputs.cache-hit != 'true'
@@ -377,15 +487,18 @@ jobs:
         # Stop ZAP
         curl "http://localhost:8080/JSON/core/action/shutdown/" || true
         echo "ZAP scan completed"
+
     - name: Run Wapiti Scan
       if: steps.cache-dast-results.outputs.cache-hit != 'true'
       run: |
         echo "Running Wapiti scan..."
         $HOME/.local/bin/wapiti -u http://localhost:5000 --format txt --output wapiti_report.txt || echo "Wapiti scan completed with issues"
+
     - name: Display Cached DAST Results
       if: steps.cache-dast-results.outputs.cache-hit == 'true'
       run: |
         echo "DAST results restored from cache"
+
     - name: Upload DAST Results
       uses: actions/upload-artifact@v4
       with:
@@ -394,6 +507,7 @@ jobs:
           wapiti_report.txt
           zap_report.json
           zap_report.txt
+
   dast-security-gate:
     name: DAST Security Gate
     runs-on: ubuntu-latest
@@ -427,6 +541,7 @@ jobs:
         fi
         
         echo "DAST SECURITY GATE PASSED: Security testing completed"
+
   security-summary:
     name: Security Summary Report
     runs-on: ubuntu-latest
@@ -440,7 +555,16 @@ jobs:
         pattern: '*-results'
         merge-multiple: true
 
+    # Cache summary generation
+    - name: Cache Summary Generation
+      id: cache-summary
+      uses: actions/cache@v3
+      with:
+        path: security_summary.md
+        key: security-summary-${{ env.CACHE_VERSION }}-${{ hashFiles('*.json', '*.txt') }}
+
     - name: Generate Security Summary
+      if: steps.cache-summary.outputs.cache-hit != 'true'
       run: |
         echo "## SecureCart Security Pipeline Summary" > security_summary.md
         echo "" >> security_summary.md
@@ -462,6 +586,12 @@ jobs:
         ls -la *.json *.txt *.md 2>/dev/null || echo "No report files found"
         
         cat security_summary.md
+
+    - name: Display Cached Summary
+      if: steps.cache-summary.outputs.cache-hit == 'true'
+      run: |
+        echo "Security summary restored from cache"
+
     - name: Upload Security Summary
       uses: actions/upload-artifact@v4
       with:
