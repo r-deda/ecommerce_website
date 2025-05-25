@@ -241,7 +241,7 @@ jobs:
             echo "SECURITY GATE FAILED: High severity issues found ($HIGH_ISSUES)"
             exit 1
           fi
-          if [ "$MEDIUM_ISSUES" -gt 2 ] 2>/dev/null; then
+          if [ "$MEDIUM_ISSUES" -gt 0 ] 2>/dev/null; then
             echo "SECURITY GATE FAILED: Too many medium severity issues ($MEDIUM_ISSUES)"
             exit 1
           fi
