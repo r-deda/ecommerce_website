@@ -237,11 +237,11 @@ jobs:
           echo "High severity SAST issues found: $HIGH_ISSUES"
           echo "Medium severity SAST issues found: $MEDIUM_ISSUES"
           # Fail on any high severity, or more than 2 medium severity issues
-          if [ "$HIGH_ISSUES" -gt 2 ] 2>/dev/null; then
+          if [ "$HIGH_ISSUES" -gt 0 ] 2>/dev/null; then
             echo "SECURITY GATE FAILED: High severity issues found ($HIGH_ISSUES)"
             exit 1
           fi
-          if [ "$MEDIUM_ISSUES" -gt 2 ] 2>/dev/null; then
+          if [ "$MEDIUM_ISSUES" -gt 0 ] 2>/dev/null; then
             echo "SECURITY GATE FAILED: Too many medium severity issues ($MEDIUM_ISSUES)"
             exit 1
           fi
@@ -257,7 +257,7 @@ jobs:
             CRITICAL_VULNS=$(grep -c -E "vulnerability.*found|CVE-|GHSA-" safety_report.txt 2>/dev/null || echo "0")
           fi
           echo "Critical vulnerabilities found by Safety: $CRITICAL_VULNS"
-          if [ "$CRITICAL_VULNS" -gt 2 ] 2>/dev/null; then
+          if [ "$CRITICAL_VULNS" -gt  ] 2>/dev/null; then
             echo "SECURITY GATE FAILED: Too many critical vulnerabilities ($CRITICAL_VULNS)"
             exit 1
           fi
@@ -267,7 +267,7 @@ jobs:
         if [ -f pip_audit_report.txt ] && [ -s pip_audit_report.txt ]; then
           PIP_AUDIT_VULNS=$(grep -c "vulnerability\|vulnerable" pip_audit_report.txt 2>/dev/null || echo "0")
           echo "Vulnerabilities found by pip-audit: $PIP_AUDIT_VULNS"
-          if [ "$PIP_AUDIT_VULNS" -gt 2 ] 2>/dev/null; then
+          if [ "$PIP_AUDIT_VULNS" -gt 0 ] 2>/dev/null; then
             echo "SECURITY GATE FAILED: Too many pip-audit vulnerabilities ($PIP_AUDIT_VULNS)"
             exit 1
           fi
@@ -281,7 +281,7 @@ jobs:
             SNYK_CODE_ISSUES=0
           fi
           echo "Code issues found by Snyk Code: $SNYK_CODE_ISSUES"
-          if [ "$SNYK_CODE_ISSUES" -gt 2 ] 2>/dev/null; then
+          if [ "$SNYK_CODE_ISSUES" -gt 0 ] 2>/dev/null; then
             echo "SECURITY GATE FAILED: Too many Snyk Code issues ($SNYK_CODE_ISSUES)"
             exit 1
           fi
@@ -295,7 +295,7 @@ jobs:
             SNYK_TEST_VULNS=0
           fi
           echo "Dependency vulnerabilities found by Snyk Test: $SNYK_TEST_VULNS"
-          if [ "$SNYK_TEST_VULNS" -gt 2 ] 2>/dev/null; then
+          if [ "$SNYK_TEST_VULNS" -gt 0 ] 2>/dev/null; then
             echo "SECURITY GATE FAILED: Too many Snyk dependency vulnerabilities ($SNYK_TEST_VULNS)"
             exit 1
           fi
@@ -569,12 +569,12 @@ jobs:
           echo "ZAP Medium severity alerts: $MEDIUM_ALERTS"
           
           # More lenient thresholds for academic environment
-          if [ "$HIGH_ALERTS" -gt 2 ] 2>/dev/null; then
+          if [ "$HIGH_ALERTS" -gt 0 ] 2>/dev/null; then
             echo "DAST SECURITY GATE FAILED: Critical vulnerabilities found by ZAP ($HIGH_ALERTS)"
             exit 1
           fi
           
-          if [ "$MEDIUM_ALERTS" -gt 2 ] 2>/dev/null; then
+          if [ "$MEDIUM_ALERTS" -gt 0 ] 2>/dev/null; then
             echo "DAST SECURITY GATE WARNING: Many medium severity issues found ($MEDIUM_ALERTS)"
           fi
         else
@@ -598,7 +598,7 @@ jobs:
           echo "Wapiti critical vulnerabilities found: $WAPITI_VULNS (SQL:$SQL_INJ, XSS:$XSS, CmdExec:$CMD_EXEC, PathTrav:$PATH_TRAV)"
           
           # Only fail on actual critical vulnerabilities, ignore missing headers
-          if [ "$WAPITI_VULNS" -gt 2 ] 2>/dev/null; then
+          if [ "$WAPITI_VULNS" -gt 0 ] 2>/dev/null; then
             echo "DAST SECURITY GATE FAILED: Critical vulnerabilities found by Wapiti ($WAPITI_VULNS)"
             exit 1
           fi
