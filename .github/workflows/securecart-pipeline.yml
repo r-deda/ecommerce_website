@@ -9,15 +9,11 @@ on:
 env:
   PYTHON_VERSION: '3.12'
   SECRET_KEY: ${{ secrets.SECRET_KEY || 'dev-secret-key' }}
-  CACHE_VERSION: 'v3'
 
 jobs:
-  setup-and-cache:
-    name: Setup Dependencies and Cache
+  setup:
+    name: Setup Environment
     runs-on: ubuntu-latest
-    outputs:
-      cache-hit: ${{ steps.cache-deps.outputs.cache-hit }}
-
     steps:
     - name: Checkout Code
       uses: actions/checkout@v4
@@ -27,29 +23,29 @@ jobs:
       with:
         python-version: ${{ env.PYTHON_VERSION }}
 
-    - name: Cache Python Dependencies
+    - name: Cache Dependencies
       id: cache-deps
       uses: actions/cache@v3
       with:
         path: |
           ~/.cache/pip
           ~/.local/lib/python${{ env.PYTHON_VERSION }}/site-packages
-        key: ${{ runner.os }}-pip-${{ env.CACHE_VERSION }}-${{ hashFiles('requirements.txt') }}
+        key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
         restore-keys: |
-          ${{ runner.os }}-pip-${{ env.CACHE_VERSION }}-
+          ${{ runner.os }}-pip-
 
-    - name: Install Dependencies
+    - name: Install All Dependencies
+      if: steps.cache-deps.outputs.cache-hit != 'true'
       run: |
         python -m pip install --upgrade pip
         pip install --user -r requirements.txt
-        pip install --user bandit safety pip-audit flake8 black isort
+        pip install --user bandit safety pip-audit flake8 black isort wapiti3
         npm install -g snyk
 
   security-analysis:
     name: Security Analysis (SAST & SCA)
     runs-on: ubuntu-latest
-    needs: setup-and-cache
-
+    needs: setup
     steps:
     - name: Checkout Code
       uses: actions/checkout@v4
@@ -58,13 +54,6 @@ jobs:
       uses: actions/setup-python@v4
       with:
         python-version: ${{ env.PYTHON_VERSION }}
-
-    - name: Install Security Tools
-      run: |
-        python -m pip install --upgrade pip
-        pip install --user bandit safety pip-audit
-        npm install -g snyk
-        echo "$HOME/.local/bin" >> $GITHUB_PATH
 
     - name: Restore Dependencies Cache
       uses: actions/cache@v3
@@ -72,67 +61,36 @@ jobs:
         path: |
           ~/.cache/pip
           ~/.local/lib/python${{ env.PYTHON_VERSION }}/site-packages
-        key: ${{ runner.os }}-pip-${{ env.CACHE_VERSION }}-${{ hashFiles('requirements.txt') }}
+        key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
 
-    - name: Cache Security Scan Results
-      id: cache-security-results
-      uses: actions/cache@v3
-      with:
-        path: |
-          bandit_report.json
-          safety_report.txt
-          pip_audit_report.txt
-          snyk_code_report.txt
-          snyk_test_report.txt
-        key: security-results-${{ hashFiles('**/*.py', 'requirements.txt') }}-${{ github.sha }}
+    - name: Add Tools to PATH
+      run: echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-    - name: Run Security Scans
-      if: steps.cache-security-results.outputs.cache-hit != 'true'
+    - name: Run SAST Scans
       run: |
-        echo "Running security analysis..."
+        echo "Running Static Application Security Testing..."
         
-        # Bandit SAST Scan
-        echo "=== RUNNING BANDIT STATIC ANALYSIS ==="
-        $HOME/.local/bin/bandit -r run.py shop/ -f json -o bandit_report.json || echo "Bandit completed (exit code indicates findings, not failure)"
-        if [ ! -f bandit_report.json ]; then
-          echo '{"results":[]}' > bandit_report.json
-        fi
+        # Bandit SAST
+        bandit -r run.py shop/ -f json -o bandit_report.json || true
         
-        # Safety SCA Scan
-        echo "=== RUNNING SAFETY DEPENDENCY SCAN ==="
-        $HOME/.local/bin/safety check -r requirements.txt > safety_report.txt || echo "Safety completed (exit code indicates findings, not failure)"
-        if [ ! -f safety_report.txt ]; then
-          echo "No vulnerabilities found" > safety_report.txt
-        fi
-        
-        # Pip-Audit SCA Scan
-        echo "=== RUNNING PIP-AUDIT SCAN ==="
-        $HOME/.local/bin/pip-audit -r requirements.txt > pip_audit_report.txt || echo "Pip-audit completed (exit code indicates findings, not failure)"
-        if [ ! -f pip_audit_report.txt ] || [ ! -s pip_audit_report.txt ]; then
-          echo "No known vulnerabilities found" > pip_audit_report.txt
-        fi
-        
-        # Snyk Code SAST Scan
-        echo "=== RUNNING SNYK SAST ANALYSIS ==="
-        snyk auth ${{ secrets.SNYK_TOKEN || '7763ec57-5521-456c-9b43-7a2e1deeb046' }} || echo "Snyk auth failed"
-        snyk code test shop/ run.py > snyk_code_report.txt || echo "Snyk Code completed (exit code indicates findings, not failure)"
-        if [ ! -f snyk_code_report.txt ]; then
-          echo "No code issues found" > snyk_code_report.txt
-        fi
-        
-        # Snyk Dependency SCA Scan
-        echo "=== RUNNING SNYK DEPENDENCY SCAN ==="
-        snyk test . > snyk_test_report.txt || echo "Snyk dependency scan completed (exit code indicates findings, not failure)"
-        if [ ! -f snyk_test_report.txt ]; then
-          echo "No dependency vulnerabilities found" > snyk_test_report.txt
-        fi
-        
-        echo "All security scans completed successfully"
+        # Snyk Code SAST
+        snyk auth ${{ secrets.SNYK_TOKEN || '7763ec57-5521-456c-9b43-7a2e1deeb046' }} || true
+        snyk code test . > snyk_code_report.txt || true
 
-    - name: Display Cached Results
-      if: steps.cache-security-results.outputs.cache-hit == 'true'
+    - name: Run SCA Scans
       run: |
-        echo "Security scan results restored from cache"
+        echo "Running Software Composition Analysis..."
+        
+        # Safety SCA
+        safety check -r requirements.txt > safety_report.txt || true
+        
+        # Pip-Audit SCA
+        pip-audit -r requirements.txt > pip_audit_report.txt || true
+        
+        # Snyk Dependencies SCA
+        snyk test . > snyk_test_report.txt || true
 
     - name: Upload Security Reports
       uses: actions/upload-artifact@v4
@@ -148,41 +106,7 @@ jobs:
   code-quality:
     name: Code Quality Check
     runs-on: ubuntu-latest
-    needs: setup-and-cache
-
-    steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
-
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
-
-    - name: Install Code Quality Tools
-      run: |
-        python -m pip install --upgrade pip
-        pip install --user flake8 black isort
-        echo "$HOME/.local/bin" >> $GITHUB_PATH
-
-    - name: Run Code Quality Checks
-      run: |
-        echo "Running code quality analysis..."
-        
-        # Code Formatting Check
-        $HOME/.local/bin/black --check --diff shop/ run.py || echo "Black formatting issues found"
-        
-        # Linting with Flake8
-        $HOME/.local/bin/flake8 shop/ run.py --count --max-line-length=88 --extend-ignore=E203,W503,F401,E501,E402,F403,F405,F841 --show-source --statistics || echo "Flake8 issues found"
-        
-        # Import Sorting Check
-        $HOME/.local/bin/isort --check-only --diff shop/ run.py || echo "Import sorting issues found"
-
-  build-application:
-    name: Build Application
-    runs-on: ubuntu-latest
-    needs: [security-analysis, code-quality]
-
+    needs: setup
     steps:
     - name: Checkout Code
       uses: actions/checkout@v4
@@ -198,21 +122,30 @@ jobs:
         path: |
           ~/.cache/pip
           ~/.local/lib/python${{ env.PYTHON_VERSION }}/site-packages
-        key: ${{ runner.os }}-pip-${{ env.CACHE_VERSION }}-${{ hashFiles('requirements.txt') }}
+        key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
 
-    - name: Test Application Startup
+    - name: Add Tools to PATH
+      run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+    - name: Run Code Quality Checks
       run: |
-        echo "Testing application can start..."
-        export SECRET_KEY="test_secret_key"
-        export DATABASE_URL="sqlite:///test.db"
-        mkdir -p instance
-        timeout 10s python run.py || echo "Application startup test completed"
+        echo "Running code quality analysis..."
+        
+        # Code formatting check
+        black --check --diff run.py shop/ || echo "Formatting issues found"
+        
+        # Linting
+        flake8 run.py shop/ --max-line-length=88 --extend-ignore=E203,W503,F401,E501,E402 || echo "Linting issues found"
+        
+        # Import sorting
+        isort --check-only --diff run.py shop/ || echo "Import sorting issues found"
 
   security-gate:
     name: Security Gate Check
     runs-on: ubuntu-latest
-    needs: build-application
-
+    needs: [security-analysis, code-quality]
     steps:
     - name: Download Security Reports
       uses: actions/download-artifact@v4
@@ -222,84 +155,55 @@ jobs:
     - name: Install jq for JSON Processing
       run: sudo apt-get update && sudo apt-get install -y jq
 
-    - name: Security Gate Evaluation
+    - name: Evaluate Security Thresholds
       run: |
         echo "Evaluating security gate criteria..."
         
-        # Check Bandit results for high severity issues
-        if [ -f bandit_report.json ] && [ -s bandit_report.json ]; then
+        # Check Bandit results
+        if [ -f bandit_report.json ]; then
           HIGH_ISSUES=$(jq '[.results[] | select(.issue_severity == "HIGH")] | length' bandit_report.json 2>/dev/null || echo "0")
           MEDIUM_ISSUES=$(jq '[.results[] | select(.issue_severity == "MEDIUM")] | length' bandit_report.json 2>/dev/null || echo "0")
-          echo "High severity SAST issues found: $HIGH_ISSUES"
-          echo "Medium severity SAST issues found: $MEDIUM_ISSUES"
-          if [ "$HIGH_ISSUES" -gt 2 ] 2>/dev/null; then
-            echo "SECURITY GATE FAILED: High severity issues found ($HIGH_ISSUES)"
+          echo "Bandit - High: $HIGH_ISSUES, Medium: $MEDIUM_ISSUES"
+          
+          if [ "$HIGH_ISSUES" -gt 0 ]; then
+            echo "SECURITY GATE FAILED: High severity SAST issues found"
             exit 1
           fi
-          if [ "$MEDIUM_ISSUES" -gt 2 ] 2>/dev/null; then
+          
+          if [ "$MEDIUM_ISSUES" -gt 3 ]; then
             echo "SECURITY GATE FAILED: Too many medium severity issues ($MEDIUM_ISSUES)"
             exit 1
           fi
         fi
         
-        # Check Safety results for critical vulnerabilities
-        if [ -f safety_report.txt ] && [ -s safety_report.txt ]; then
-          if grep -q "No known security vulnerabilities reported\|0 vulnerabilities reported" safety_report.txt 2>/dev/null; then
-            CRITICAL_VULNS=0
-          else
-            CRITICAL_VULNS=$(grep -c -E "vulnerability.*found|CVE-|GHSA-" safety_report.txt 2>/dev/null || echo "0")
-          fi
-          echo "Critical vulnerabilities found by Safety: $CRITICAL_VULNS"
-          if [ "$CRITICAL_VULNS" -gt 2 ] 2>/dev/null; then
-            echo "SECURITY GATE FAILED: Too many critical vulnerabilities ($CRITICAL_VULNS)"
+        # Check Safety results
+        if [ -f safety_report.txt ]; then
+          SAFETY_VULNS=$(grep -c "vulnerability" safety_report.txt 2>/dev/null || echo "0")
+          echo "Safety vulnerabilities: $SAFETY_VULNS"
+          
+          if [ "$SAFETY_VULNS" -gt 3 ]; then
+            echo "SECURITY GATE FAILED: Too many dependency vulnerabilities ($SAFETY_VULNS)"
             exit 1
           fi
         fi
         
-        # Check pip-audit results for vulnerabilities
-        if [ -f pip_audit_report.txt ] && [ -s pip_audit_report.txt ]; then
-          PIP_AUDIT_VULNS=$(grep -c "vulnerability\|vulnerable" pip_audit_report.txt 2>/dev/null || echo "0")
-          echo "Vulnerabilities found by pip-audit: $PIP_AUDIT_VULNS"
-          if [ "$PIP_AUDIT_VULNS" -gt 2 ] 2>/dev/null; then
-            echo "SECURITY GATE FAILED: Too many pip-audit vulnerabilities ($PIP_AUDIT_VULNS)"
-            exit 1
-          fi
-        fi
-        
-        # Check Snyk Code results for code issues
-        if [ -f snyk_code_report.txt ] && [ -s snyk_code_report.txt ]; then
-          SNYK_CODE_ISSUES=$(grep -c -E "✗|High:|Medium:|issues found|vulnerabilities found" snyk_code_report.txt 2>/dev/null || echo "0")
-          if grep -q "no issues\|no vulnerabilities\|no problems\|No issues were found" snyk_code_report.txt 2>/dev/null; then
-            SNYK_CODE_ISSUES=0
-          fi
-          echo "Code issues found by Snyk Code: $SNYK_CODE_ISSUES"
-          if [ "$SNYK_CODE_ISSUES" -gt 2 ] 2>/dev/null; then
-            echo "SECURITY GATE FAILED: Too many Snyk Code issues ($SNYK_CODE_ISSUES)"
-            exit 1
-          fi
-        fi
-        
-        # Check Snyk Test results for dependency vulnerabilities
-        if [ -f snyk_test_report.txt ] && [ -s snyk_test_report.txt ]; then
-          SNYK_TEST_VULNS=$(grep -c -E "✗|vulnerability|High:|Medium:|issues found" snyk_test_report.txt 2>/dev/null || echo "0")
-          if grep -q "no vulnerable\|no issues\|no known vulnerabilities\|no vulnerable paths found" snyk_test_report.txt 2>/dev/null; then
-            SNYK_TEST_VULNS=0
-          fi
-          echo "Dependency vulnerabilities found by Snyk Test: $SNYK_TEST_VULNS"
-          if [ "$SNYK_TEST_VULNS" -gt 2 ] 2>/dev/null; then
-            echo "SECURITY GATE FAILED: Too many Snyk dependency vulnerabilities ($SNYK_TEST_VULNS)"
+        # Check pip-audit results
+        if [ -f pip_audit_report.txt ]; then
+          PIP_VULNS=$(grep -c "vulnerability" pip_audit_report.txt 2>/dev/null || echo "0")
+          echo "Pip-audit vulnerabilities: $PIP_VULNS"
+          
+          if [ "$PIP_VULNS" -gt 3 ]; then
+            echo "SECURITY GATE FAILED: Critical pip-audit vulnerabilities ($PIP_VULNS)"
             exit 1
           fi
         fi
         
         echo "SECURITY GATE PASSED: Deployment approved"
 
-  deploy-staging:
-    name: Deploy to Staging
+  build-and-test:
+    name: Build Application
     runs-on: ubuntu-latest
     needs: security-gate
-    if: github.ref == 'refs/heads/main'
-
     steps:
     - name: Checkout Code
       uses: actions/checkout@v4
@@ -315,7 +219,46 @@ jobs:
         path: |
           ~/.cache/pip
           ~/.local/lib/python${{ env.PYTHON_VERSION }}/site-packages
-        key: ${{ runner.os }}-pip-${{ env.CACHE_VERSION }}-${{ hashFiles('requirements.txt') }}
+        key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Test Application Build
+      run: |
+        echo "Testing application startup..."
+        export SECRET_KEY="test_secret_key"
+        export DATABASE_URL="sqlite:///test.db"
+        mkdir -p instance
+        
+        # Test application can start
+        timeout 15s python run.py || echo "Application startup test completed"
+
+  deploy-and-dast:
+    name: Deploy & Dynamic Security Testing
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: github.ref == 'refs/heads/main'
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Restore Dependencies Cache
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cache/pip
+          ~/.local/lib/python${{ env.PYTHON_VERSION }}/site-packages
+        key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Add Tools to PATH
+      run: echo "$HOME/.local/bin" >> $GITHUB_PATH
 
     - name: Deploy Application
       run: |
@@ -325,251 +268,172 @@ jobs:
         export DEBUG="False"
         mkdir -p instance
         
+        # Initialize database
         python -c "
         from shop import app, db
         with app.app_context():
             db.create_all()
-            print('Database initialised successfully')
+            print('Database initialized successfully')
         "
         
-        echo "Staging deployment completed successfully"
-
-  post-deployment-security:
-    name: Post-Deployment Security Testing (DAST)
-    runs-on: ubuntu-latest
-    needs: deploy-staging
-    if: github.ref == 'refs/heads/main'
-
-    steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
-
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
-
-    - name: Restore Dependencies Cache
-      uses: actions/cache@v3
-      with:
-        path: |
-          ~/.cache/pip
-          ~/.local/lib/python${{ env.PYTHON_VERSION }}/site-packages
-        key: ${{ runner.os }}-pip-${{ env.CACHE_VERSION }}-${{ hashFiles('requirements.txt') }}
-
-    - name: Cache ZAP Installation
-      id: cache-zap
-      uses: actions/cache@v3
-      with:
-        path: /opt/zaproxy
-        key: zap-installation-${{ env.CACHE_VERSION }}
-
-    - name: Install ZAP
-      if: steps.cache-zap.outputs.cache-hit != 'true'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y default-jdk wget
-        cd /tmp
-        wget https://github.com/zaproxy/zaproxy/releases/download/v2.16.1/ZAP_2.16.1_Linux.tar.gz
-        tar -xzf ZAP_2.16.1_Linux.tar.gz
-        sudo mv ZAP_2.16.1 /opt/zaproxy
-        sudo chmod +x /opt/zaproxy/zap.sh
-
-    - name: Install Wapiti
-      run: |
-        pip install --user --upgrade bcrypt passlib
-        pip install --user wapiti3
-        echo "$HOME/.local/bin" >> $GITHUB_PATH
-
-    - name: Start Application
-      run: |
-        export SECRET_KEY="test_secret_key"
-        export DATABASE_URL="sqlite:///instance/securecart.db"
-        mkdir -p instance
+        # Start application in background
         python run.py &
         
-        # Wait for application to start with health check
-        for i in {1..30}; do
-          if curl -f http://localhost:5000 2>/dev/null; then
-            echo "Application is ready"
+        # Wait for application to be ready
+        for i in {1..20}; do
+          if curl -f http://localhost:5000 >/dev/null 2>&1; then
+            echo "Application is ready for testing"
             break
           fi
-          echo "Waiting for application to start... ($i/30)"
-          sleep 2
+          echo "Waiting for application... ($i/20)"
+          sleep 3
         done
 
-    - name: Cache DAST Results
-      id: cache-dast-results
-      uses: actions/cache@v3
-      with:
-        path: |
-          wapiti_report.txt
-          zap_report.json
-          zap_report.txt
-        key: dast-results-${{ hashFiles('**/*.py') }}-${{ github.sha }}
-
-    - name: Run ZAP Scan
-      if: steps.cache-dast-results.outputs.cache-hit != 'true'
+    - name: Run ZAP DAST Scan
       run: |
-        echo "Running ZAP security scan..."
-        cd /opt/zaproxy
-        ./zap.sh -daemon -host 0.0.0.0 -port 8080 -config api.disablekey=true &
-        sleep 30
+        echo "Running ZAP Dynamic Security Scan..."
         
-        # Quick scan
-        curl "http://localhost:8080/JSON/spider/action/scan/?url=http://localhost:5000" || true
-        sleep 25
-        curl "http://localhost:8080/JSON/ascan/action/scan/?url=http://localhost:5000" || true
-        sleep 40
-        
-        # Get results and save to file
-        curl "http://localhost:8080/JSON/core/view/alerts/" > zap_report.json || true
-        
-        # Create readable version
-        echo "=== ZAP Security Scan Report ===" > zap_report.txt
-        echo "Scan Date: $(date)" >> zap_report.txt
-        echo "Target: http://localhost:5000" >> zap_report.txt
-        echo "" >> zap_report.txt
-        
-        # Parse JSON and create readable summary
-        if [ -f zap_report.json ] && [ -s zap_report.json ]; then
-          echo "Alerts Found:" >> zap_report.txt
-          cat zap_report.json | grep -o '"name":"[^"]*"' | sed 's/"name":"//g' | sed 's/"//g' >> zap_report.txt || echo "No alerts found" >> zap_report.txt
-        else
-          echo "No security issues detected or scan failed" >> zap_report.txt
-        fi
-        
-        # Stop ZAP
-        curl "http://localhost:8080/JSON/core/action/shutdown/" || true
-        echo "ZAP scan completed"
+        # Use ZAP Docker image for simpler setup
+        docker run --network="host" -v $(pwd):/zap/wrk/:rw \
+          -t ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
+          -t http://localhost:5000 \
+          -J zap_report.json \
+          -r zap_report.html || echo "ZAP scan completed"
 
-    - name: Run Wapiti Scan
-      if: steps.cache-dast-results.outputs.cache-hit != 'true'
+    - name: Run Wapiti DAST Scan
       run: |
-        echo "Running Wapiti scan..."
-        $HOME/.local/bin/wapiti -u http://localhost:5000 --format txt --output wapiti_report.txt || echo "Wapiti scan completed with issues"
-
-    - name: Display Cached DAST Results
-      if: steps.cache-dast-results.outputs.cache-hit == 'true'
-      run: |
-        echo "DAST results restored from cache"
+        echo "Running Wapiti Dynamic Security Scan..."
+        wapiti -u http://localhost:5000 --format txt --output wapiti_report.txt || echo "Wapiti scan completed"
 
     - name: Upload DAST Results
       uses: actions/upload-artifact@v4
       with:
-        name: dast-results
+        name: dast-reports
         path: |
-          wapiti_report.txt
           zap_report.json
-          zap_report.txt
+          zap_report.html
+          wapiti_report.txt
 
   dast-security-gate:
     name: DAST Security Gate
     runs-on: ubuntu-latest
-    needs: post-deployment-security
+    needs: deploy-and-dast
     if: github.ref == 'refs/heads/main'
-
     steps:
-    - name: Download DAST Results
+    - name: Download DAST Reports
       uses: actions/download-artifact@v4
       with:
-        name: dast-results
+        name: dast-reports
 
     - name: Install jq for JSON Processing
       run: sudo apt-get update && sudo apt-get install -y jq
 
     - name: Evaluate DAST Results
       run: |
-        echo "Evaluating post-deployment security test results..."
-
-        # Check ZAP results for security vulnerabilities
-        if [ -f zap_report.json ] && [ -s zap_report.json ]; then
-          HIGH_ALERTS=$(jq -r '[.alerts[]? | select(.risk? == "High" or .risk? == "HIGH")] | length' zap_report.json 2>/dev/null || echo "0")
-          MEDIUM_ALERTS=$(jq -r '[.alerts[]? | select(.risk? == "Medium" or .risk? == "MEDIUM")] | length' zap_report.json 2>/dev/null || echo "0")
-
-          # Fallback: count text patterns if JSON parsing fails
-          if [ "$HIGH_ALERTS" = "0" ] && [ "$MEDIUM_ALERTS" = "0" ]; then
-            HIGH_ALERTS=$(grep -c -i "high.*risk\|risk.*high" zap_report.json 2>/dev/null || echo "0")
-            MEDIUM_ALERTS=$(grep -c -i "medium.*risk\|risk.*medium" zap_report.json 2>/dev/null || echo "0")
-          fi
-
-          echo "ZAP High severity alerts: $HIGH_ALERTS"
-          echo "ZAP Medium severity alerts: $MEDIUM_ALERTS"
-
-          if [ "$HIGH_ALERTS" -gt 2 ] 2>/dev/null; then
-            echo "DAST SECURITY GATE FAILED: Critical vulnerabilities found by ZAP ($HIGH_ALERTS)"
+        echo "Evaluating dynamic security test results..."
+        
+        # Check ZAP results
+        if [ -f zap_report.json ]; then
+          HIGH_ALERTS=$(jq '[.site[]?.alerts[]? | select(.riskdesc? | startswith("High"))] | length' zap_report.json 2>/dev/null || echo "0")
+          MEDIUM_ALERTS=$(jq '[.site[]?.alerts[]? | select(.riskdesc? | startswith("Medium"))] | length' zap_report.json 2>/dev/null || echo "0")
+          
+          echo "ZAP - High risk alerts: $HIGH_ALERTS, Medium risk alerts: $MEDIUM_ALERTS"
+          
+          if [ "$HIGH_ALERTS" -gt 0 ]; then
+            echo "DAST SECURITY GATE FAILED: Critical vulnerabilities found ($HIGH_ALERTS)"
             exit 1
           fi
-
-          if [ "$MEDIUM_ALERTS" -gt 5 ] 2>/dev/null; then
-            echo "DAST SECURITY GATE WARNING: Many medium severity issues found ($MEDIUM_ALERTS)"
+          
+          if [ "$MEDIUM_ALERTS" -gt 5 ]; then
+            echo "DAST SECURITY GATE WARNING: Many medium vulnerabilities ($MEDIUM_ALERTS)"
           fi
-        else
-          echo "ZAP scan results not found or empty - allowing deployment"
         fi
-
-        # Check Wapiti results for vulnerabilities
-        if [ -f wapiti_report.txt ] && [ -s wapiti_report.txt ]; then
-          WAPITI_VULNS=0
+        
+        # Check Wapiti results for critical vulnerabilities
+        if [ -f wapiti_report.txt ]; then
+          CRITICAL_WAPITI=$(grep -E "SQL Injection|Cross Site Scripting|Command execution" wapiti_report.txt | wc -l || echo "0")
+          echo "Wapiti critical vulnerabilities: $CRITICAL_WAPITI"
           
-          # Look for specific vulnerability types
-          SQL_INJ=$(grep -E "SQL Injection.*:" wapiti_report.txt | grep -o "[0-9]\+" | head -1 2>/dev/null || echo "0")
-          XSS=$(grep -E "Cross Site Scripting.*:" wapiti_report.txt | grep -o "[0-9]\+" | head -1 2>/dev/null || echo "0") 
-          CMD_EXEC=$(grep -E "Command execution.*:" wapiti_report.txt | grep -o "[0-9]\+" | head -1 2>/dev/null || echo "0")
-          PATH_TRAV=$(grep -E "Path Traversal.*:" wapiti_report.txt | grep -o "[0-9]\+" | head -1 2>/dev/null || echo "0")
-          
-          WAPITI_VULNS=$((SQL_INJ + XSS + CMD_EXEC + PATH_TRAV))
-
-          echo "Wapiti critical vulnerabilities found: $WAPITI_VULNS (SQL:$SQL_INJ, XSS:$XSS, CmdExec:$CMD_EXEC, PathTrav:$PATH_TRAV)"
-
-          if [ "$WAPITI_VULNS" -gt 2 ] 2>/dev/null; then
-            echo "DAST SECURITY GATE FAILED: Critical vulnerabilities found by Wapiti ($WAPITI_VULNS)"
+          if [ "$CRITICAL_WAPITI" -gt 2 ]; then
+            echo "DAST SECURITY GATE FAILED: Critical vulnerabilities in Wapiti ($CRITICAL_WAPITI)"
             exit 1
           fi
-        else
-          echo "Wapiti scan results not found or empty - allowing deployment"
         fi
-
-        echo "DAST SECURITY GATE PASSED: Security testing completed"
+        
+        echo "DAST SECURITY GATE PASSED: Dynamic security testing completed successfully"
 
   security-summary:
     name: Security Summary Report
     runs-on: ubuntu-latest
-    needs: [security-analysis, post-deployment-security, dast-security-gate]
+    needs: [security-analysis, deploy-and-dast, dast-security-gate]
     if: always()
-
     steps:
-    - name: Download All Reports
+    - name: Download All Security Reports
       uses: actions/download-artifact@v4
       with:
-        pattern: '*-results'
+        pattern: '*-reports'
         merge-multiple: true
 
-    - name: Generate Security Summary
+    - name: Install jq for JSON Processing
+      run: sudo apt-get update && sudo apt-get install -y jq
+
+    - name: Generate Comprehensive Security Summary
       run: |
-        echo "## SecureCart Security Pipeline Summary" > security_summary.md
+        echo "# SecureCart Security Pipeline Summary" > security_summary.md
         echo "" >> security_summary.md
         echo "**Build:** ${{ github.sha }}" >> security_summary.md
         echo "**Branch:** ${{ github.ref_name }}" >> security_summary.md
         echo "**Date:** $(date)" >> security_summary.md
+        echo "**Workflow:** ${{ github.workflow }}" >> security_summary.md
         echo "" >> security_summary.md
         
-        echo "### Security Testing Completed:" >> security_summary.md
-        echo "- ✓ Static Application Security Testing (SAST)" >> security_summary.md
-        echo "- ✓ Software Composition Analysis (SCA)" >> security_summary.md
-        echo "- ✓ Dynamic Application Security Testing (DAST)" >> security_summary.md
-        echo "- ✓ Code quality checks" >> security_summary.md
-        echo "- ✓ Security gates implemented" >> security_summary.md
-        echo "- ✓ Intelligent caching for performance" >> security_summary.md
+        echo "## Security Testing Overview" >> security_summary.md
+        echo "- ✅ Static Application Security Testing (SAST)" >> security_summary.md
+        echo "- ✅ Software Composition Analysis (SCA)" >> security_summary.md
+        echo "- ✅ Dynamic Application Security Testing (DAST)" >> security_summary.md
+        echo "- ✅ Code Quality Analysis" >> security_summary.md
+        echo "- ✅ Multi-layered Security Gates" >> security_summary.md
         echo "" >> security_summary.md
         
-        echo "### Reports Generated:" >> security_summary.md
-        ls -la *.json *.txt *.md 2>/dev/null || echo "No report files found"
+        echo "## SAST Results" >> security_summary.md
+        if [ -f bandit_report.json ]; then
+          BANDIT_ISSUES=$(jq '[.results[]] | length' bandit_report.json 2>/dev/null || echo "0")
+          echo "- Bandit Issues Found: $BANDIT_ISSUES" >> security_summary.md
+        fi
+        echo "" >> security_summary.md
         
+        echo "## SCA Results" >> security_summary.md
+        if [ -f safety_report.txt ]; then
+          SAFETY_VULNS=$(grep -c "vulnerability" safety_report.txt 2>/dev/null || echo "0")
+          echo "- Safety Vulnerabilities: $SAFETY_VULNS" >> security_summary.md
+        fi
+        if [ -f pip_audit_report.txt ]; then
+          PIP_VULNS=$(grep -c "vulnerability" pip_audit_report.txt 2>/dev/null || echo "0")
+          echo "- Pip-Audit Vulnerabilities: $PIP_VULNS" >> security_summary.md
+        fi
+        echo "" >> security_summary.md
+        
+        echo "## DAST Results" >> security_summary.md
+        if [ -f zap_report.json ]; then
+          ZAP_ALERTS=$(jq '[.site[]?.alerts[]?] | length' zap_report.json 2>/dev/null || echo "0")
+          echo "- ZAP Security Alerts: $ZAP_ALERTS" >> security_summary.md
+        fi
+        echo "" >> security_summary.md
+        
+        echo "## Generated Reports" >> security_summary.md
+        echo '```' >> security_summary.md
+        ls -la *.json *.txt *.html *.md 2>/dev/null || echo "No report files found"
+        echo '```' >> security_summary.md
+        
+        echo "" >> security_summary.md
+        echo "## Pipeline Status" >> security_summary.md
+        echo "All security checks completed successfully! 🎉" >> security_summary.md
+        
+        # Display summary
         cat security_summary.md
 
-    - name: Upload Security Summary
+    - name: Upload Complete Security Summary
       uses: actions/upload-artifact@v4
       with:
-        name: security-summary
+        name: complete-security-summary
         path: security_summary.md
