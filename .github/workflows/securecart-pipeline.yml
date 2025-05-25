@@ -389,8 +389,7 @@ jobs:
       run: |
         # Fix bcrypt/passlib version conflict and create bin directory
         pip install --user --upgrade pip
-        pip install --user "bcrypt<4.0.0" "passlib>=1.7.4"
-        pip install --user wapiti3
+        pip install bcrypt passlib wapiti3
         
         # Create the bin directory if it doesn't exist
         mkdir -p "$HOME/.local/bin"
@@ -456,15 +455,15 @@ jobs:
         echo "Running Wapiti scan..."
         
         # Checking that wapiti3 is installed
-        pip install wapiti3
-        wapiti -u http://localhost:5000 --format txt --output wapiti_report.txt || echo "Wapiti scan completed with issues"
+        pip uninstall bcrypt
+        pip install bcrypt
+        wapiti -u http://localhost:5000 --format txt > wapiti_report.txt || echo "Wapiti scan completed with issues"
 
     - name: Display Cached DAST Results
       if: steps.cache-dast-results.outputs.cache-hit == 'true'
       run: |
         echo "DAST results restored from cache"
 
-    # THE KEY FIX: Ensure files exist before uploading
     - name: Ensure Report Files Exist
       run: |
         echo "Checking for DAST report files..."
